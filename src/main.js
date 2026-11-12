@@ -9,6 +9,8 @@ window.game = game;   // test seam and console access
 async function boot() {
   const bar = $('loadbar').firstElementChild, progress = (p) => { bar.style.width = Math.round(p * 100) + '%'; };
   try {
+    // The smooth people built in Blender, loaded first because the player is one. A look whose kit is missing gets the low-polygon figure.
+    try { const { loadPeople } = await import('./actors.js'); await loadPeople(); } catch (e) { console.warn('People kits not loaded:', e && e.message); }
     await game.init(progress);
     game.sites = buildLayout(game);
     if (game.sea.shore) game.sea.shore(game.world);                       // foam around the quay and piers

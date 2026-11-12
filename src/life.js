@@ -132,7 +132,7 @@ export function setupLife(g) {
       scan = 0.4;
       for (const it of list) {
         const d = Math.hypot(it.x - p.x, it.z - p.z) - (it.v.radius || 2);
-        it.v.group.visible = d < 150; it.near = d < 52; setShadows(it, d < 26);
+        it.v.group.visible = d < 150; it.near = d < 52; setShadows(it, d < 26); if (d < 40) for (const q of it.v.people) { const a = q.actor || q, m = a.group.matrixWorld.elements; a.setDistance(Math.hypot(m[12] - p.x, m[14] - p.z)); } else if (!it.farSet || it.v.group.visible) { it.farSet = true; for (const q of it.v.people) (q.actor || q).setDistance(99); }
       }
     }
     for (const it of list) if (it.near) it.v.update(dt);

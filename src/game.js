@@ -329,7 +329,7 @@ export class Game {
     for (const n of this.npcs.values()) {
       if (n.hidden || n.space !== this.space) { continue; }
       const d = Math.hypot(n.actor.x - p.x, n.actor.z - p.z);
-      n.actor.group.visible = d < 150; n.actor.mesh.castShadow = d < 28;
+      n.actor.group.visible = d < 150; n.actor.shadows(d < 28); n.actor.setDistance(d);
       if (d < 150) n.update(dt, p, d < 60, d < 22 ? 1 : 0.4);
     }
     for (const t of this.tickers) t(dt);

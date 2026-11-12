@@ -12,11 +12,11 @@ export const VISITOR = { skin: 'tan', hair: 0x3a2a1c, beard: 'short', robe: 0xd8
 const SHEPHERD = { skin: 'tan', hair: 0x3a2a1c, beard: 'short', robe: 0xb89b78, length: 'short' };
 
 export function setLook(g, spec) {
-  const p = g.player; p.mesh.geometry.dispose(); p.mesh.geometry = buildFigure(spec, 99); p.spec = Object.assign({}, spec);
+  g.player.setLook(spec);
 }
 export function setInvisible(g, on) {
-  const m = g.player.material; g.invisible = on;
-  m.transparent = on; m.opacity = on ? 0.2 : 1; m.depthWrite = !on; g.player.mesh.castShadow = !on; m.needsUpdate = true;
+  g.invisible = on; g.player.shadows(!on);
+  for (const m of new Set([g.player.material, g.player.material2])) { if (!m || !g.player.spec.ownMaterial) continue; m.transparent = on; m.opacity = on ? 0.2 : 1; m.depthWrite = !on; m.needsUpdate = true; }
 }
 
 export function setupRing(g, api) {

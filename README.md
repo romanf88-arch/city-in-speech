@@ -17,6 +17,7 @@ W and S walk, A and D turn, drag the mouse to look around, Shift runs, E talks, 
 - What Socrates and the others argue is from Plato's Republic. The retellings are the game's own. A few short phrases on the passage cards are from C. D. C. Reeve's translation (Hackett, 2004).
 - The guide, her purse, and the six readers in the game are invented. Each reader speaks for real books, which the journal cites by page: Julia Annas, Allan Bloom, Seth Benardete, Eric Havelock, Karl Popper, C. D. C. Reeve, Sean McAleer (CC BY 4.0), and essays in The Cambridge Companion to Plato's Republic and Plato's Republic: A Critical Guide.
 - The reciter in the market square recites the whole Iliad in Samuel Butler's translation (1898, public domain).
+- The people are built from the MakeHuman base model (released as CC0), with their clothes draped by cloth simulation in Blender.
 - Built with three.js (MIT licence; see `vendor/THREE-LICENSE.txt`).
 
 This is the first part. The founding of the city, the three waves, the ship, the decline of cities, and the choice of lives are not built yet.

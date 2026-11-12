@@ -125,7 +125,20 @@ function fullSpec(spec) {
 //   length: long|short, bare (right shoulder bare), build, height, shoes, hat: none|petasos|wreath|goldWreath|phrygian|helmet|crown|hood|pilos,
 //   hatColor, nose: straight|snub|hook|broad, age: adult|old|child, dress: chiton|peplos|mantle|exomis, woman, apron (color or true), trim (color) }
 // `extra(builder)` may add more triangles (hand tools and carried things).
-export function buildFigure(spec, seed = 1, extra = null) {
+// Hats of the low-polygon figure. A smooth person wears these too (wreaths excepted, which a kit has).
+function addHat(b, s, hy, over) {
+  const B = BI;
+  if (s.hat === 'petasos') { b.loft([{ y: hy + 0.075, rx: 0.2, rz: 0.2 }, { y: hy + 0.105, rx: 0.085, rz: 0.085 }, { y: hy + 0.15, rx: 0.05, rz: 0.05 }], 8, B.head, s.hatColor || 0x9a8a68); }
+  if (s.hat === 'pilos') { b.loft([{ y: hy + 0.055, rx: 0.114, rz: 0.124, z: -0.004 }, { y: hy + 0.12, rx: 0.09, rz: 0.096, z: -0.006 }, { y: hy + 0.2, rx: 0.03, rz: 0.03, z: -0.008 }], 8, B.head, s.hatColor || 0xc9b892, { capLo: false }); }
+  if (s.hat === 'wreath' || s.hat === 'goldWreath') { const hx = s.hat === 'wreath' ? 0x5f7a3a : 0xd9a93c; b.loft([{ y: hy + 0.062, rx: 0.115, rz: 0.125, z: -0.004 }, { y: hy + 0.095, rx: 0.112, rz: 0.122, z: -0.004 }], 10, B.head, hx, { capLo: false, capHi: false }); }
+  if (s.hat === 'crown') { b.loft([{ y: hy + 0.07, rx: 0.108, rz: 0.118 }, { y: hy + 0.16, rx: 0.12, rz: 0.13 }], 8, B.head, 0xd9a93c, { capLo: false, capHi: false }); b.ball(0, hy + 0.05, -0.004, 0.1, 0.1, 0.11, 0x8a2f2a, B.head, (x, y) => y > 0.5); }
+  if (s.hat === 'phrygian') { b.ball(0, hy + 0.03, -0.01, 0.112, 0.125, 0.122, s.hatColor || 0xa33b2e, B.head, (x, y, z) => y > 0.3 || (z < -0.1 && y > -0.35)); b.loft([{ y: hy + 0.13, rx: 0.06, rz: 0.06, z: 0.0 }, { y: hy + 0.2, rx: 0.035, rz: 0.04, z: 0.05 }, { y: hy + 0.19, rx: 0.02, rz: 0.02, z: 0.1 }], 6, B.head, s.hatColor || 0xa33b2e); }
+  if (s.hat === 'helmet') { b.ball(0, hy + 0.02, -0.004, 0.114, 0.135, 0.124, 0xa8733a, B.head, (x, y, z) => y > 0.15 || z < 0.2); b.quad([0, hy + 0.14, 0.09], [0, hy + 0.14, -0.13], [0, hy + 0.27, -0.12], [0, hy + 0.25, 0.07], 0xa33b2e, B.head); b.quad([0, hy + 0.14, -0.13], [0, hy + 0.14, 0.09], [0, hy + 0.25, 0.07], [0, hy + 0.27, -0.12], 0xa33b2e, B.head); }
+  if (s.hat === 'hood') b.ball(0, hy + 0.012, -0.02, 0.125, 0.145, 0.135, over, B.head, (x, y, z) => z < 0.35 || y > 0.55);
+}
+
+// `shift(builder)` may move the finished triangles (a kit uses it to put them on its own joints).
+export function buildFigure(spec, seed = 1, extra = null, shift = null) {
   const b = new Builder(seed), s = fullSpec(spec);
   const skin = SKIN[s.skin] || s.skin, w = s.build, cloth = s.robe, over = s.robe2 || s.robe, chest = s.bare ? skin : cloth;
   const B = BI, fem = !!s.woman, sw = fem ? 0.9 : 1, mantle = s.dress === 'mantle';
@@ -202,14 +215,7 @@ export function buildFigure(spec, seed = 1, extra = null) {
   const beardLen = { none: 0, short: 0.045, full: 0.09, long: 0.17 }[s.beard] || 0;
   // The beard starts below the mouth in front and runs up the cheeks at the sides.
   if (beardLen) b.ball(0, hy - 0.082 - beardLen * 0.35, 0.03, 0.09, 0.055 + beardLen * 0.62, 0.082, s.hair, B.head, (x, y, z) => z > -0.25 && (y < 0.2 || (Math.abs(x) > 0.5 && y < 0.75)));
-  // hats
-  if (s.hat === 'petasos') { b.loft([{ y: hy + 0.075, rx: 0.2, rz: 0.2 }, { y: hy + 0.105, rx: 0.085, rz: 0.085 }, { y: hy + 0.15, rx: 0.05, rz: 0.05 }], 8, B.head, s.hatColor || 0x9a8a68); }
-  if (s.hat === 'pilos') { b.loft([{ y: hy + 0.055, rx: 0.114, rz: 0.124, z: -0.004 }, { y: hy + 0.12, rx: 0.09, rz: 0.096, z: -0.006 }, { y: hy + 0.2, rx: 0.03, rz: 0.03, z: -0.008 }], 8, B.head, s.hatColor || 0xc9b892, { capLo: false }); }
-  if (s.hat === 'wreath' || s.hat === 'goldWreath') { const hx = s.hat === 'wreath' ? 0x5f7a3a : 0xd9a93c; b.loft([{ y: hy + 0.062, rx: 0.115, rz: 0.125, z: -0.004 }, { y: hy + 0.095, rx: 0.112, rz: 0.122, z: -0.004 }], 10, B.head, hx, { capLo: false, capHi: false }); }
-  if (s.hat === 'crown') { b.loft([{ y: hy + 0.07, rx: 0.108, rz: 0.118 }, { y: hy + 0.16, rx: 0.12, rz: 0.13 }], 8, B.head, 0xd9a93c, { capLo: false, capHi: false }); b.ball(0, hy + 0.05, -0.004, 0.1, 0.1, 0.11, 0x8a2f2a, B.head, (x, y) => y > 0.5); }
-  if (s.hat === 'phrygian') { b.ball(0, hy + 0.03, -0.01, 0.112, 0.125, 0.122, s.hatColor || 0xa33b2e, B.head, (x, y, z) => y > 0.3 || (z < -0.1 && y > -0.35)); b.loft([{ y: hy + 0.13, rx: 0.06, rz: 0.06, z: 0.0 }, { y: hy + 0.2, rx: 0.035, rz: 0.04, z: 0.05 }, { y: hy + 0.19, rx: 0.02, rz: 0.02, z: 0.1 }], 6, B.head, s.hatColor || 0xa33b2e); }
-  if (s.hat === 'helmet') { b.ball(0, hy + 0.02, -0.004, 0.114, 0.135, 0.124, 0xa8733a, B.head, (x, y, z) => y > 0.15 || z < 0.2); b.quad([0, hy + 0.14, 0.09], [0, hy + 0.14, -0.13], [0, hy + 0.27, -0.12], [0, hy + 0.25, 0.07], 0xa33b2e, B.head); b.quad([0, hy + 0.14, -0.13], [0, hy + 0.14, 0.09], [0, hy + 0.25, 0.07], [0, hy + 0.27, -0.12], 0xa33b2e, B.head); }
-  if (s.hat === 'hood') b.ball(0, hy + 0.012, -0.02, 0.125, 0.145, 0.135, over, B.head, (x, y, z) => z < 0.35 || y > 0.55);
+  addHat(b, s, hy, over);
   // arms
   const at = fem ? 0.9 : 1;
   for (const [side, arm, fore, hand] of [[1, B.armL, B.foreL, B.handL], [-1, B.armR, B.foreR, B.handR]]) {
@@ -235,6 +241,7 @@ export function buildFigure(spec, seed = 1, extra = null) {
     b.loft([{ y: 0.56, rx: 0.215 * w, rz: 0.18 * w }, { y: 0.97, rx: 0.182 * w, rz: 0.132 * w }], 8, B.skirtU, over, { capHi: false, capLo: false });
   }
   if (extra) extra(b);
+  if (shift) shift(b);
   return b.geometry();
 }
 
@@ -467,32 +474,181 @@ function solve2(Sx, Sy, Sz, T, l1, l2, pole, sg, q1, q2) {
 
 export const figureMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
 
+// ---------------------------------------------------------------------------------------------
+// Smooth people built in Blender (blender/people.py, from the MakeHuman base mesh). A kit file holds the parts of
+// one body: faces, garments, hair, beards. All are made for these same bones, with the kit's own joint places, so
+// every pose, gesture, and activity works on them. An Actor picks the parts that fit its look and colors them.
+// When no kit fits a look (or its file did not load) the low-polygon figure is built instead. The low-polygon
+// figure also stands in for a smooth person who is far away.
+export const MODELS = {};
+// Joint places the posing code needs. These are the low-polygon figure's; a kit brings its own.
+const DIM0 = { shX: 0.205, shY: 0.26, shZ: 0, arm: 0.29, fore: 0.26, palm: 0.05, hipX: 0.095, hipY: -0.03, hipZ: 0, thigh: 0.44, shin: 0.42, ankle: 0, armOut: 0.07, headUp: 0.12 };
+const toLin = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+// Light wraps a little way past the edge of the lit side, by an amount set for skin, cloth, hair, and eyes.
+const LAMBERT_WRAP = THREE.ShaderChunk.lights_lambert_pars_fragment.replace(
+  'float dotNL = saturate( dot( geometryNormal, directLight.direction ) );',
+  'float dotNL = saturate( ( dot( geometryNormal, directLight.direction ) + gWrap ) / ( 1.0 + gWrap ) );');
+// Every vertex of a part names a slot; the Actor gives each slot a color. "fixed" parts carry their own colors.
+const SLOTS = { skin: 0, robe: 1, robe2: 2, hair: 3, fixed: 4, accent: 5, leaf: 6, trim: 7 };
+function makeModelMaterial(colors) {
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  const cols = []; for (let i = 0; i < 8; i++) cols.push(new THREE.Color(1, 1, 1));
+  m.userData.cols = cols; setSlotColors(m, colors);
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uCol = { value: cols };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aux;\nvarying vec2 vAux;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAux = aux;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vAux;\nuniform vec3 uCol[ 8 ];\nfloat gWrap = 0.0;')
+      .replace('#include <lights_lambert_pars_fragment>', LAMBERT_WRAP)
+      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.indirectDiffuse *= 1.3;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        // aux.x: the slot. aux.y: meters from a cloth edge that carries a border.
+        int slot = int( floor( vAux.x + 0.5 ) );
+        gWrap = slot == 0 ? 0.32 : ( slot == 1 || slot == 2 ) ? 0.2 : slot == 4 ? 0.5 : 0.15;
+        vec3 tintOnly = diffuseColor.rgb;
+        diffuseColor.rgb *= uCol[ slot ];
+        if ( slot == 1 || slot == 2 ) {
+          float e = vAux.y;
+          float band = 1.0 - smoothstep( 0.021, 0.0225, e );
+          float line = smoothstep( 0.0285, 0.03, e ) * ( 1.0 - smoothstep( 0.034, 0.0355, e ) );
+          diffuseColor.rgb = mix( diffuseColor.rgb, uCol[ 7 ] * tintOnly, max( band, line ) );
+        }`);
+  };
+  m.customProgramCacheKey = () => 'people-model-2';
+  return m;
+}
+function setSlotColors(m, colors) { const cols = m.userData.cols; for (const k in SLOTS) if (k !== 'fixed') cols[SLOTS[k]].set(colors[k] != null ? colors[k] : 0xffffff); }
+function parseKit(buf) {
+  const dv = new DataView(buf);
+  if (dv.getUint32(0, true) !== 0x50534943) throw new Error('not a people file');
+  const jl = dv.getUint32(4, true), head = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, jl)));
+  if (head.version !== 2) throw new Error('old people file');
+  const n = head.verts, nt = head.tris; let o = 8 + jl;
+  const pos = new Float32Array(buf.slice(o, o + n * 12)); o += n * 12;
+  const nb = new Int8Array(buf, o, n * 4); o += n * 4;
+  const cb = new Uint8Array(buf, o, n * 4); o += n * 4;
+  const ib = new Uint8Array(buf, o, n * 4); o += n * 4;
+  const wb = new Uint8Array(buf, o, n * 4); o += n * 4;
+  const idx = new Uint16Array(buf.slice(o, o + nt * 6));
+  const nor = new Float32Array(n * 3), col = new Float32Array(n * 3), aux = new Float32Array(n * 2), si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
+  const map = head.boneOrder.map((b) => BI[b]);
+  for (let i = 0; i < n; i++) {
+    const slot = cb[i * 4 + 3];
+    // A tint is a multiple of the slot's color, stored at half size. Fixed parts store their own color the same way.
+    for (let k = 0; k < 3; k++) { nor[i * 3 + k] = nb[i * 4 + k] / 127; const t = cb[i * 4 + k] / 127.5; col[i * 3 + k] = slot === 4 ? toLin(Math.min(1, t)) : Math.pow(t, 2.2); }
+    aux[i * 2] = slot; aux[i * 2 + 1] = (nb[i * 4 + 3] / 127) * 0.128;
+    let s = 0; for (let k = 0; k < 4; k++) s += wb[i * 4 + k];
+    for (let k = 0; k < 4; k++) { si[i * 4 + k] = map[ib[i * 4 + k]]; sw[i * 4 + k] = wb[i * 4 + k] / (s || 1); }
+  }
+  const B = head.bones, d = (a, b, k) => B[a][k] - B[b][k], parts = {};
+  for (const p of head.parts) parts[p.name] = p;
+  const D = { shX: B.armL[0], shY: d('armL', 'spine', 1), shZ: B.armL[2], arm: -d('foreL', 'armL', 1), fore: -d('handL', 'foreL', 1), palm: 0.05,
+    hipX: B.thighL[0], hipY: d('thighL', 'hips', 1), hipZ: B.thighL[2], thigh: -d('shinL', 'thighL', 1), shin: -d('footL', 'shinL', 1), ankle: B.footL[1] - 0.04,
+    armOut: head.armOut, headUp: head.eyeY - B.head[1] };
+  return { name: head.name, head, pos, nor, col, aux, si, sw, idx, parts, bones: B, D, lid: head.lidOpen - head.lidShut, geo: new Map(),
+    faces: head.parts.filter((p) => p.name.startsWith('skin:')).map((p) => p.name.slice(5)) };
+}
+// One mesh out of the named parts of a kit. People who wear the same parts share it.
+function composeGeometry(kit, names) {
+  const key = names.join('|'); let g = kit.geo.get(key); if (g) return g;
+  const ps = names.map((n) => kit.parts[n]).filter(Boolean);
+  let nv = 0, ni = 0; for (const p of ps) { nv += p.nv; ni += p.ni; }
+  const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), col = new Float32Array(nv * 3), aux = new Float32Array(nv * 2), si = new Uint16Array(nv * 4), sw = new Float32Array(nv * 4);
+  const idx = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+  let v = 0, i = 0;
+  for (const p of ps) {
+    const a = p.v0, b = p.v0 + p.nv;
+    pos.set(kit.pos.subarray(a * 3, b * 3), v * 3); nor.set(kit.nor.subarray(a * 3, b * 3), v * 3); col.set(kit.col.subarray(a * 3, b * 3), v * 3);
+    aux.set(kit.aux.subarray(a * 2, b * 2), v * 2); si.set(kit.si.subarray(a * 4, b * 4), v * 4); sw.set(kit.sw.subarray(a * 4, b * 4), v * 4);
+    for (let k = 0; k < p.ni; k++) idx[i + k] = kit.idx[p.i0 + k] + v;
+    v += p.nv; i += p.ni;
+  }
+  g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('aux', new THREE.BufferAttribute(aux, 2));
+  g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4)); g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  kit.geo.set(key, g); return g;
+}
+const lum = (hex) => { const c = new THREE.Color(hex); return 0.3 * c.r + 0.6 * c.g + 0.1 * c.b; };
+// Which kit, which of its parts, and which colors make the person a look describes. Null when no kit can.
+// A look may name them itself: model (the kit), face, wear (a list of garments). Otherwise they follow from the
+// same words the low-polygon figure reads: woman, age, dress, length, robe2, bare, hairStyle, beard, hat.
+function modelFor(spec, seed) {
+  if (spec.model === false) return null;
+  const s = fullSpec(spec), child = s.age === 'child';
+  if (s.hairStyle === 'veil' && (!s.beard || s.beard === 'none')) s.woman = true;      // a veiled head is a woman's, whatever else the look says
+  const kit = MODELS[spec.model || (child ? 'child' : s.woman ? 'woman' : 'man')];
+  if (!kit) return null;
+  const has = (n) => !!kit.parts[n], parts = [];
+  // face
+  let face = spec.face && has('skin:' + spec.face) ? spec.face : null;
+  if (!face) { const pools = kit.head.pools || {}, pool = (s.age === 'old' && pools.old) || (child && s.woman && pools.girl) || pools.any || kit.faces; face = pool[seed % pool.length]; }
+  parts.push('skin:' + face);
+  // garments
+  const short = s.length === 'short';
+  if (spec.wear) parts.push(...spec.wear.map((w) => 'g:' + w));
+  else if (has('g:peplos') && (s.woman && !child || !has('g:tunic_long'))) parts.push('g:peplos');
+  else if ((s.dress === 'exomis' || (s.bare && short)) && has('g:exomis')) parts.push('g:exomis');
+  else if (s.bare && has('g:wrap_bare')) parts.push('g:wrap_bare');
+  else {
+    const len = short && !(child && s.woman) ? 'short' : 'long', cloak = (s.robe2 || s.bare) && has('g:wrap');
+    parts.push(cloak && has('g:under_' + len) ? 'g:under_' + len : 'g:tunic_' + len); if (cloak) parts.push('g:wrap');
+  }
+  // hair, beard, wreath
+  const want = { full: ['full'], curls: ['curls', 'full'], receding: ['receding', 'full'], bald: ['bald'], long: ['long', 'tail', 'full'], bun: ['bun', 'tail'], veil: ['veil', 'bun', 'tail'], none: [] }[s.hairStyle] || ['full'];
+  const hair = spec.hairPart || want.find((h) => has('hair:' + h)); if (hair) parts.push('hair:' + hair);
+  if (s.beard && s.beard !== 'none' && !s.woman && !child) { const b = [s.beard, 'full', 'short'].find((x) => has('beard:' + x)); if (b) parts.push('beard:' + b); }
+  const leafy = s.hat === 'wreath' || s.hat === 'goldWreath';
+  if (leafy && has('hat:wreath')) parts.push('hat:wreath');
+  const robe = s.robe, veil = hair === 'veil';
+  const colors = { skin: SKIN[s.skin] || s.skin, robe, robe2: s.robe2 || (veil ? shade(robe, 0.8) : shade(robe, 0.72)), hair: s.hair,
+    accent: spec.belt != null ? spec.belt : 0x6b4a32, leaf: s.hat === 'goldWreath' ? 0xd9a93c : 0x5f7a3a,
+    trim: s.trim != null ? s.trim : lum(robe) > 0.25 ? shade(robe, 0.66) : 0xe9e2d0 };
+  return { kit, parts: parts.filter(has), colors, lowHat: !leafy && s.hat && s.hat !== 'none' };
+}
+// Load the kit files. Call before making any Actor. A file that fails to load is skipped, and the looks it would
+// have served get the low-polygon figure.
+export async function loadPeople(names = ['mika', 'man', 'woman', 'socrates', 'child'], base = './assets/people/') {
+  await Promise.all(names.map(async (n) => {
+    try { const r = await fetch(base + n + '.bin'); if (!r.ok) throw new Error(r.status); MODELS[n] = parseKit(await r.arrayBuffer()); } catch (e) { console.warn('People kit ' + n + ' not loaded:', e && e.message); }
+  }));
+  return MODELS;
+}
+
 export class Actor {
   constructor(spec = {}, seed = 1) {
     this.spec = spec; this.seed = seed;
     this.group = new THREE.Group();
     this.bones = {}; const list = [];
+    const pick = modelFor(spec, seed), M = pick ? pick.kit : null; this.model = M; this.pick = pick; this.D = M ? M.D : DIM0;
     for (const [name, parent, x, y, z] of BONES) {
-      const bone = new THREE.Bone(); bone.name = name; bone.position.set(x, y, z);
+      const bone = new THREE.Bone(); bone.name = name;
+      if (M) { const p = M.bones[name], q = parent ? M.bones[parent] : ZERO; bone.position.set(p[0] - q[0], p[1] - q[1], p[2] - q[2]); } else bone.position.set(x, y, z);
       this.bones[name] = bone; list.push(bone);
       if (parent) this.bones[parent].add(bone);
     }
-    this.material = spec.ownMaterial ? figureMaterial.clone() : figureMaterial;
-    this.mesh = new THREE.SkinnedMesh(buildFigure(spec, seed), this.material);
+    // Where the face bones rest, for a model (its face is moved by turning lids and jaw, not by sliding patches).
+    this.face0 = null; if (M) { this.face0 = {}; for (const n of ['browL', 'browR', 'mouthL', 'mouthR']) this.face0[n] = this.bones[n].position.clone(); }
+    this.material = M ? makeModelMaterial(pick.colors) : spec.ownMaterial ? figureMaterial.clone() : figureMaterial;
+    this.material2 = M && spec.ownMaterial ? figureMaterial.clone() : figureMaterial;      // for a smooth person's low-polygon hat and tools
+    this.geoNear = M ? composeGeometry(M, pick.parts) : null; this.geoMid = null;
+    this.mesh = new THREE.SkinnedMesh(M ? this.geoNear : buildFigure(spec, seed), this.material);
     this.mesh.add(this.bones.root);
     this.mesh.bind(new THREE.Skeleton(list));
     this.mesh.castShadow = true; this.mesh.receiveShadow = false;
     this.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.9, 0), 2.6);
     this.mesh.frustumCulled = true;
-    const child = spec.age === 'child', h = spec.height || (child ? 0.62 : 1);
-    this.h = h; this.mesh.scale.set(h, h, h);
+    // A kit's child is already shaped like one; the low-polygon child is the adult figure with its bones resized.
+    const child = spec.age === 'child' && !M, h = spec.height || (spec.age === 'child' ? 0.62 : 1), wide = M ? 1 + 0.4 * ((spec.build || 1) - 1) : 1;
+    this.h = h; this.mesh.scale.set(h * wide, h, h * wide);
     // A child is the same figure with a larger head and shorter limbs.
     this.legS = child ? 0.84 : 1; this.armS = child ? 0.88 : 1; this.lift0 = -0.9 * (1 - this.legS);
     if (child) { this.bones.head.scale.setScalar(1.3); for (const n of ['thighL', 'thighR']) this.bones[n].scale.setScalar(this.legS); for (const n of ['armL', 'armR']) this.bones[n].scale.setScalar(this.armS); }
     this.stoop = spec.age === 'old' ? 1 : 0;
     this.group.add(this.mesh);
     // state
-    this.x = 0; this.y = 0; this.z = 0; this.heading = 0; this.height = (1.72 + this.lift0 + (child ? 0.07 : 0)) * h;
+    this.x = 0; this.y = 0; this.z = 0; this.heading = 0; this.height = (M ? M.head.height - 0.04 : 1.72 + this.lift0 + (child ? 0.07 : 0)) * h;
     this.pose = 'stand'; this.walk = 0; this.phase = (seed * 1.7) % 6; this.speed = 0;
     this.talking = 0; this.talkT = seed * 3.1; this.gesture = spec.gesture || 1; this.speaking = false;
     this.lookAt = null; this.headYaw = 0; this.headPitch = 0;
@@ -509,14 +665,61 @@ export class Actor {
     this.act = null; this.actOn = false; this.actW = 0; this.actT = 0; this.actPose = null; this.actSpeed = 1; this.props = null;
     this.shot = null; this.held = { R: false, L: false };
     this.legW = 0; this.feet = [0.2, 0.2, 0.05, 0.04, 0]; this.poseHW = 0; this.pR = [-0.2, 1, 0.3]; this.pL = [0.2, 1, 0.3];
+    // A smooth person: near is the kit's mesh (plus low-polygon hat and tools), far is the low-polygon figure.
+    this.lod = 0; this.near = true; this.far = null; this.extras = null;
+    if (M) this._extras();
   }
   attach(boneName, obj) { this.bones[boneName].add(obj); if (boneName === 'handR') this.held.R = true; if (boneName === 'handL') this.held.L = true; return obj; }
   place(x, z, heading, y) { this.x = x; this.z = z; if (heading != null) this.heading = heading; if (y != null) this.y = y; this.sync(); }
   sync() { this.group.position.set(this.x, this.y, this.z); this.group.rotation.y = this.heading; }
-  headWorld(out) { return this.bones.head.getWorldPosition(out || new THREE.Vector3()).add(_v.set(0, 0.12, 0)); }
+  headWorld(out) { return this.bones.head.getWorldPosition(out || new THREE.Vector3()).add(_v.set(0, this.D.headUp, 0)); }
   face(x, z, dt, k = 8) { const want = Math.atan2(x - this.x, z - this.z); this.heading = dt ? dampAngle(this.heading, want, k, dt) : want; }
-  get triangles() { return this.mesh.geometry.attributes.position.count / 3; }
-
+  get triangles() { const g = this.mesh.geometry; return (g.index ? g.index.count : g.attributes.position.count) / 3; }
+  // Move low-polygon triangles from that figure's joints to this kit's, so they sit right on its bones.
+  _lowShift(b) {
+    const B = this.model.bones, top = this.model.head.height - 1.757;
+    for (let i = 0; i < b.bone.length; i++) {
+      const k = b.bone[i], n = BONES[k][0], o = BIND[n], q = B[n];
+      if (k === BI.head || k >= BI.browL) { b.pos[i * 3 + 1] += top; b.pos[i * 3 + 2] += 0.012; }       // heads line up at the crown
+      else { b.pos[i * 3] += q[0] - o[0]; b.pos[i * 3 + 1] += k === BI.footL || k === BI.footR ? 0 : q[1] - o[1]; b.pos[i * 3 + 2] += q[2] - o[2]; }
+    }
+  }
+  _low(geometry) {
+    const m = new THREE.SkinnedMesh(geometry, this.material2); m.bind(this.mesh.skeleton, this.mesh.bindMatrix);
+    m.scale.copy(this.mesh.scale); m.castShadow = this.mesh.castShadow; m.boundingSphere = this.mesh.boundingSphere; this.group.add(m); return m;
+  }
+  // A smooth person's hat (other than a wreath) and the tools of its activity: low-polygon, on the same bones.
+  _extras() {
+    if (this.extras) { this.group.remove(this.extras); this.extras.geometry.dispose(); this.extras = null; }
+    const lod = this.lod;
+    if (this.far) { this.group.remove(this.far); this.far.geometry.dispose(); this.far = null; }
+    const b = new Builder(this.seed), s = fullSpec(this.spec);
+    if (this.pick.lowHat) addHat(b, s, HY, s.robe2 || s.robe);
+    if (this.props) addTools(b, this.props);
+    if (b.tris) { this._lowShift(b); this.extras = this._low(b.geometry()); }
+    this.lod = -1; this.setLod(lod);
+  }
+  // Three levels of a smooth person: 0 the kit's full mesh, 1 its thinned mesh for the middle distance,
+  // 2 the low-polygon figure for far away (built the first time it is needed).
+  setLod(l) {
+    if (!this.model || l === this.lod) return;
+    this.lod = l; this.near = l < 2;
+    if (l === 2 && !this.far) this.far = this._low(buildFigure(this.spec, this.seed, this.props ? (b) => addTools(b, this.props) : null, (b) => this._lowShift(b)));
+    if (l < 2) this.mesh.geometry = l === 0 ? this.geoNear : this.geoMid || (this.geoMid = composeGeometry(this.model, this.pick.parts.map((n) => (this.model.parts['m:' + n] ? 'm:' + n : n))));
+    this.mesh.visible = l < 2; if (this.extras) this.extras.visible = l < 2; if (this.far) this.far.visible = l === 2;
+  }
+  // Pick the level from the distance to whoever is looking, with some slack so it does not flicker at a boundary.
+  setDistance(d) { const l = this.lod; this.setLod(d < (l === 0 ? 7.5 : 6) ? 0 : d < (l === 2 ? 19 : 22) ? 1 : 2); }
+  setNear(on) { this.setLod(on ? 0 : 2); }
+  shadows(on) { this.mesh.castShadow = on; if (this.extras) this.extras.castShadow = on; if (this.far) this.far.castShadow = on; }
+  // Change the look in place (the ring story dresses the player as other people).
+  setLook(spec) {
+    this.spec = Object.assign({}, spec);
+    if (!this.model) { this.mesh.geometry.dispose(); this.mesh.geometry = buildFigure(spec, this.seed); return; }
+    const pick = modelFor(spec, this.seed);
+    if (!pick || pick.kit !== this.model) { console.warn('That look needs another body; keeping the present one.'); return; }
+    this.pick = pick; this.geoNear = composeGeometry(this.model, pick.parts); this.geoMid = null; setSlotColors(this.material, pick.colors); this._extras();
+  }
   // Play a short gesture over whatever the figure is doing. Returns its length in seconds.
   play(name, opts = {}) { const g = GESTURES[name]; if (!g) return 0; const sp = opts.speed || 1; this.shot = { g, t: 0, sp, o: opts }; return g[0] / sp; }
 
@@ -527,7 +730,11 @@ export class Actor {
     if (def) { this.act = name; this.actOn = true; this.actT = opts.phase != null ? opts.phase : (this.seed * 0.77) % 5; this.actPose = opts.pose || def.pose || null; this.actSpeed = opts.speed || 1; props = opts.props === null ? null : Object.assign({}, def.props, opts.props); }
     else this.actOn = false;
     const sig = props ? JSON.stringify(props) : '';
-    if (sig !== (this.propSig || '')) { this.propSig = sig; this.props = props; this.mesh.geometry.dispose(); this.mesh.geometry = buildFigure(this.spec, this.seed, props ? (b) => addTools(b, props) : null); }
+    if (sig !== (this.propSig || '')) {
+      this.propSig = sig; this.props = props;
+      if (this.model) this._extras();
+      else { this.mesh.geometry.dispose(); this.mesh.geometry = buildFigure(this.spec, this.seed, props ? (b) => addTools(b, props) : null); }
+    }
     return this;
   }
   // Jump straight to the settled pose (for figures that appear already at work).
@@ -535,7 +742,7 @@ export class Actor {
 
   update(dt, quality = 1) {
     this.t += dt;
-    const def = this.act ? ACTS[this.act] : null;
+    const def = this.act ? ACTS[this.act] : null, D = this.D, armX = D.armOut - 0.07;
     this.actW = damp(this.actW, this.actOn ? 1 : 0, 7, dt);
     if (def && !this.actOn && this.actW < 0.02) { this.act = null; this.actW = 0; }
     const P = POSES[(this.actOn && this.actPose) || this.pose] || POSES.stand, base = POSES.stand, k = 9;
@@ -587,8 +794,9 @@ export class Actor {
         case 'thighR': x += s * A; break;
         case 'shinL': x += Math.max(0, Math.sin(ph - 0.6)) * A * 1.5; break;
         case 'shinR': x += Math.max(0, -Math.sin(ph - 0.6)) * A * 1.5; break;
-        case 'armL': x += s * 0.38 * wk; break;
-        case 'armR': x += -s * 0.38 * wk; break;
+        // A model's arms hang a little farther out, clear of its draped cloth, unless the pose lifts them.
+        case 'armL': x += s * 0.38 * wk; z += armX * (1 - clamp(Math.abs(p[0]) / 1.4, 0, 1)); break;
+        case 'armR': x += -s * 0.38 * wk; z -= armX * (1 - clamp(Math.abs(p[0]) / 1.4, 0, 1)); break;
         case 'foreL': case 'foreR': x += -0.12 * wk; break;
         case 'skirtU': x += Math.sin(ph * 2) * 0.03 * wk; break;
         case 'skirtL': x += -(0.05 + 0.07 * Math.abs(s)) * wk; break;
@@ -620,7 +828,7 @@ export class Actor {
     bones.root.position.y = lift;
     bones.root.rotation.x = this.rootX;
     const shr = 0.035 * clamp(M.sh + K.shrug, -1, 1.5);
-    bones.armL.position.y = 0.26 + shr; bones.armR.position.y = 0.26 + shr;
+    bones.armL.position.y = D.shY + shr; bones.armR.position.y = D.shY + shr;
 
     // Limb placement: legs for poses with fixed feet, arms for anything that puts a hand somewhere.
     const F = P.feet;
@@ -639,9 +847,9 @@ export class Actor {
         _qi.copy(_qH).invert();
         for (let i = 0; i < 2; i++) {
           const sx = i ? -1 : 1, th = bones[i ? 'thighR' : 'thighL'], sh = bones[i ? 'shinR' : 'shinL'], ft = bones[i ? 'footR' : 'footL'];
-          _tg.set(sx * (0.095 + f[2]), f[3], f[i]).sub(_pH).applyQuaternion(_qi);
+          _tg.set(sx * (D.hipX + f[2]), f[3] + D.ankle, f[i]).sub(_pH).applyQuaternion(_qi);
           _pole.set(sx * 0.4, 0.3, 1).applyQuaternion(_qi);
-          solve2(sx * 0.095, -0.03, 0, _tg, 0.44 * ls, 0.42 * ls, _pole, -1, _q1, _q2);
+          solve2(sx * D.hipX, D.hipY, D.hipZ, _tg, D.thigh * ls, D.shin * ls, _pole, -1, _q1, _q2);
           th.quaternion.slerp(_q1, lw); sh.quaternion.slerp(_q2, lw);
           // Keep the foot level (or at the pose's pitch) whatever the leg does.
           _qa.copy(_qH).multiply(th.quaternion).multiply(sh.quaternion).invert().multiply(_qb.setFromAxisAngle(XAXIS, f[4]));
@@ -670,14 +878,25 @@ export class Actor {
       const lidV = Math.max(M.lid, bl, actLid, G.lidV || 0, K.lid);
       const talkOpen = this.talking * (0.2 + 0.8 * Math.abs(Math.sin(tt * 9.5 + 1.3 * Math.sin(tt * 4.1)))) * 0.75;
       const open = clamp(Math.max(M.open * (1 - 0.4 * this.talking) * (1 - 0.25 * M.bounce * (1 + Math.sin(this.t * 15))), talkOpen, actOpen, K.open), 0, 1);
-      const by = HY + 0.05 - 1.52, ly = HY + 0.03 - 1.52, my = HY - 0.058 - 1.52;
-      bones.browL.position.y = by + (M.bl + 0.6 * M.asym) * 0.012; bones.browR.position.y = by + (M.bl - 0.6 * M.asym) * 0.012;
-      bones.browL.rotation.z = M.bt * 0.42; bones.browR.rotation.z = -M.bt * 0.42;
-      bones.lidL.position.y = ly - 0.03 * lidV; bones.lidR.position.y = ly - 0.03 * lidV;
-      bones.jaw.position.y = my - 0.005 - 0.034 * open;
-      const wide = 0.004 * Math.abs(M.smile) - 0.009 * open * (1 - Math.abs(M.smile));
-      bones.mouthL.position.set(0.034 + wide, my + (M.smile - 0.7 * M.asym) * 0.013 - 0.006 * open, 0.1);
-      bones.mouthR.position.set(-0.034 - wide, my + (M.smile + 0.7 * M.asym) * 0.013 - 0.006 * open, 0.1);
+      if (this.model) {
+        // A model's lids turn about the middle of the eye and its jaw about its hinge; brows and mouth corners slide.
+        const f0 = this.face0, sa = Math.abs(M.smile), wide = 0.0065 * sa - 0.003 * open * (1 - sa), drop = 0.006 * open, up = M.smile > 0 ? 0.0115 : 0.007;
+        bones.lidL.rotation.x = bones.lidR.rotation.x = (lidV > 0 ? lidV : lidV * 0.35) * this.model.lid;
+        bones.jaw.rotation.x = 0.16 * open;
+        bones.browL.position.y = f0.browL.y + (M.bl + 0.6 * M.asym) * 0.0055; bones.browR.position.y = f0.browR.y + (M.bl - 0.6 * M.asym) * 0.0055;
+        bones.browL.rotation.z = M.bt * 0.26; bones.browR.rotation.z = -M.bt * 0.26;
+        bones.mouthL.position.set(f0.mouthL.x + wide, f0.mouthL.y + (M.smile - 0.7 * M.asym) * up - drop, f0.mouthL.z - 0.004 * sa);
+        bones.mouthR.position.set(f0.mouthR.x - wide, f0.mouthR.y + (M.smile + 0.7 * M.asym) * up - drop, f0.mouthR.z - 0.004 * sa);
+      } else {
+        const by = HY + 0.05 - 1.52, ly = HY + 0.03 - 1.52, my = HY - 0.058 - 1.52;
+        bones.browL.position.y = by + (M.bl + 0.6 * M.asym) * 0.012; bones.browR.position.y = by + (M.bl - 0.6 * M.asym) * 0.012;
+        bones.browL.rotation.z = M.bt * 0.42; bones.browR.rotation.z = -M.bt * 0.42;
+        bones.lidL.position.y = ly - 0.03 * lidV; bones.lidR.position.y = ly - 0.03 * lidV;
+        bones.jaw.position.y = my - 0.005 - 0.034 * open;
+        const wide = 0.004 * Math.abs(M.smile) - 0.009 * open * (1 - Math.abs(M.smile));
+        bones.mouthL.position.set(0.034 + wide, my + (M.smile - 0.7 * M.asym) * 0.013 - 0.006 * open, 0.1);
+        bones.mouthR.position.set(-0.034 - wide, my + (M.smile + 0.7 * M.asym) * 0.013 - 0.006 * open, 0.1);
+      }
     }
     this.sync();
   }
@@ -697,12 +916,12 @@ export class Actor {
     }
     if (GH.w > 0.001) { torso(GH.p); over(GH.w); qw *= 1 - GH.w; }
     if (W <= 0.001) return;
-    const bones = this.bones, arm = bones['arm' + a], fore = bones['fore' + a], hand = bones['hand' + a], as = this.armS;
+    const bones = this.bones, arm = bones['arm' + a], fore = bones['fore' + a], hand = bones['hand' + a], as = this.armS, D = this.D;
     _qi.copy(_qS).invert();
     _tg.sub(_pS).applyQuaternion(_qi);
     _pole.set(sx * 0.6, -0.55, -0.55);
     // With a turned hand the wrist is what gets placed; otherwise the palm, a little past the wrist.
-    solve2(sx * 0.205, 0.26 + shr, 0, _tg, 0.29 * as, (qw > 0 ? 0.26 + 0.05 * (1 - qw) : 0.31) * as, _pole, 1, _q1, _q2);
+    solve2(sx * D.shX, D.shY + shr, D.shZ, _tg, D.arm * as, (D.fore + D.palm * (qw > 0 ? 1 - qw : 1)) * as, _pole, 1, _q1, _q2);
     arm.quaternion.slerp(_q1, W); fore.quaternion.slerp(_q2, W);
     if (qw > 0) { _qb.copy(_qS).multiply(arm.quaternion).multiply(fore.quaternion).invert().multiply(_qa); hand.quaternion.slerp(_qb, qw); }
   }

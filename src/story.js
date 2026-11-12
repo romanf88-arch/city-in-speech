@@ -14,21 +14,21 @@ import { $ } from './util.js';
 
 const PI = Math.PI;
 export const LOOKS = {
-  socrates: { skin: 'tan', hair: 0x8a8378, hairStyle: 'bald', beard: 'full', robe: 0x8a765a, bare: true, shoes: false, build: 1.12, height: 0.97, nose: 'snub', age: 'old' },
-  cephalus: { skin: 'pale', hair: 0xe6e2da, beard: 'long', robe: 0xefe9dc, robe2: 0xe3d9c2, hat: 'wreath', height: 0.95, age: 'old' },
-  polemarchus: { skin: 'tan', hair: 0x2a221c, beard: 'short', robe: 0xe6dcc0, robe2: 0x8a3b2e, height: 1.02 },
-  thrasymachus: { skin: 'olive', hair: 0x15110e, beard: 'full', robe: 0xe0c98a, robe2: 0xc27a2a, build: 1.2, height: 1.06, gesture: 1.6 },
-  clitophon: { skin: 'tan', hair: 0x4a3a2a, robe: 0xd9d2bd, robe2: 0x6f7f6a },
-  glaucon: { skin: 'tan', hair: 0x1f1813, beard: 'short', robe: 0xe6dcc0, robe2: 0x2f5f7a, height: 1.03 },
-  adeimantus: { skin: 'tan', hair: 0x2a2018, beard: 'short', robe: 0xe6dcc0, robe2: 0x4d6a4a, height: 1.01 },
-  dromon: { skin: 'dark', hair: 0x2a221c, beard: 'short', robe: 0x2f5f7a, length: 'short', hat: 'none', build: 1.12 },
-  kleio: { skin: 'fair', hair: 0x3a2a1c, hairStyle: 'veil', robe: 0xe6dcc0, robe2: 0x8a3522, height: 0.94, build: 0.92 },
-  sannion: { skin: 'olive', hair: 0x6a5a48, hairStyle: 'bald', beard: 'short', robe: 0xe3d5a8, robe2: 0xb98a2a, build: 1.08, gesture: 1.5 },
-  archedemos: { skin: 'tan', hair: 0x3a3028, beard: 'short', robe: 0x4d7a69, length: 'short', hat: 'petasos' },
-  phanias: { skin: 'pale', hair: 0x8a7a68, beard: 'full', robe: 0xe3d5a8, robe2: 0x6b4a32, height: 0.98 },
-  theano: { skin: 'olive', hair: 0x2a1c14, hairStyle: 'veil', robe: 0xe9e2d0, robe2: 0x7a5a8a, height: 0.95, build: 0.92 },
-  terpes: { skin: 'tan', hair: 0x1c1612, hairStyle: 'long', beard: 'full', robe: 0x7a2f2a, robe2: 0xd9a93c, hat: 'goldWreath', gesture: 1.8 },
-  mika: { skin: 'tan', hair: 0x2a1c14, hairStyle: 'long', beard: 'none', woman: true, dress: 'peplos', robe: 0x6f9a7a, trim: 0xe9e2d0, length: 'long', hat: 'wreath', height: 0.86, build: 0.88, shoes: false, gesture: 1.4 },
+  socrates: { model: 'socrates', skin: 'tan', hair: 0x8a8378, hairStyle: 'bald', beard: 'full', robe: 0x8a765a, bare: true, shoes: false, build: 1.12, height: 0.97, nose: 'snub', age: 'old' },
+  cephalus: { face: 'cephalus', skin: 'pale', hair: 0xe6e2da, beard: 'long', robe: 0xefe9dc, robe2: 0xe3d9c2, hat: 'wreath', height: 0.95, age: 'old' },
+  polemarchus: { face: 'polemarchus', skin: 'tan', hair: 0x2a221c, beard: 'short', robe: 0xe6dcc0, robe2: 0x8a3b2e, height: 1.02 },
+  thrasymachus: { face: 'thrasymachus', skin: 'olive', hair: 0x15110e, beard: 'full', robe: 0xe0c98a, robe2: 0xc27a2a, build: 1.2, height: 1.06, gesture: 1.6 },
+  clitophon: { face: 't1', skin: 'tan', hair: 0x4a3a2a, robe: 0xd9d2bd, robe2: 0x6f7f6a },
+  glaucon: { face: 'glaucon', skin: 'tan', hair: 0x1f1813, beard: 'short', robe: 0xe6dcc0, robe2: 0x2f5f7a, height: 1.03 },
+  adeimantus: { face: 'adeimantus', skin: 'tan', hair: 0x2a2018, beard: 'short', robe: 0xe6dcc0, robe2: 0x4d6a4a, height: 1.01 },
+  dromon: { face: 'dromon', skin: 'dark', hair: 0x2a221c, beard: 'short', robe: 0x2f5f7a, length: 'short', hat: 'none', build: 1.12 },
+  kleio: { woman: true, face: 'kleio', skin: 'fair', hair: 0x3a2a1c, hairStyle: 'veil', robe: 0xe6dcc0, robe2: 0x8a3522, height: 0.94, build: 0.92 },
+  sannion: { face: 'sannion', skin: 'olive', hair: 0x6a5a48, hairStyle: 'bald', beard: 'short', robe: 0xe3d5a8, robe2: 0xb98a2a, build: 1.08, gesture: 1.5 },
+  archedemos: { face: 't3', skin: 'tan', hair: 0x3a3028, beard: 'short', robe: 0x4d7a69, length: 'short', hat: 'petasos' },
+  phanias: { face: 'phanias', skin: 'pale', hair: 0x8a7a68, beard: 'full', robe: 0xe3d5a8, robe2: 0x6b4a32, height: 0.98 },
+  theano: { woman: true, face: 'theano', skin: 'olive', hair: 0x2a1c14, hairStyle: 'veil', robe: 0xe9e2d0, robe2: 0x7a5a8a, height: 0.95, build: 0.92 },
+  terpes: { face: 't2', skin: 'tan', hair: 0x1c1612, hairStyle: 'long', beard: 'full', robe: 0x7a2f2a, robe2: 0xd9a93c, hat: 'goldWreath', gesture: 1.8 },
+  mika: { model: 'mika', belt: 0x8a3b2e, skin: 'tan', hair: 0x2a1c14, hairStyle: 'long', beard: 'none', woman: true, dress: 'peplos', robe: 0x6f9a7a, trim: 0xe9e2d0, length: 'long', hat: 'wreath', height: 0.86, build: 0.88, shoes: false, gesture: 1.4 },
 };
 
 // Ordinary people for the streets.
