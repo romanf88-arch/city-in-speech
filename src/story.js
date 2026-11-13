@@ -177,7 +177,7 @@ export async function setup(g) {
   // ---- the house: people who were there last night
   const C = { x: S.cephalus.x, z: S.cephalus.z }, seat = (deg, r = 2.2) => [C.x - 1.5 + Math.cos(deg * PI / 180) * r, C.z + Math.sin(deg * PI / 180) * r];
   const face = (p) => Math.atan2(C.x - 1.5 - p[0], C.z - p[1]);
-  const sC = seat(180), sT = seat(238), sK = seat(128), sS = seat(0);
+  const sC = seat(180), sT = seat(238), sK = seat(128), sS = seat(-52);      // the house altar stands 2 m east of the fire, so no seat there
   for (const p of [sC, sT, sK, sS]) g.kit.spawn('stool', p[0], p[1], 0, { noCollide: true });
   // A fire in the middle of the circle of seats, for the scenes that are remembered from last night.
   g.kit.spawn('brazier', C.x - 1.5, C.z, 0);
@@ -201,7 +201,7 @@ export async function setup(g) {
   g.addNPC({ id: 'socrates', name: 'Socrates', role: '', color: '#8a765a', look: LOOKS.socrates, x: ex.x, z: ex.z - 0.4, h: 0.25, pose: 'sit', y: null });
   g.addNPC({ id: 'listener1', name: 'A young man', look: crowdLook(11), x: ex.x - 2.2, z: ex.z + 3.4, h: 2.6, pose: 'ground' });
   g.addNPC({ id: 'listener2', name: 'A young man', look: crowdLook(13), x: ex.x + 2.4, z: ex.z + 3.0, h: -2.6, pose: 'ground' });
-  g.addNPC({ id: 'mika', name: 'Mika', role: 'sells garlands', color: '#6f9a7a', look: LOOKS.mika, x: -56.5, z: 57.6, h: 0, ghost: true, seed: 41 });
+  g.addNPC({ id: 'mika', name: 'Mika', role: 'sells garlands', color: '#6f9a7a', look: LOOKS.mika, x: -62.3, z: 60.4, h: 0, ghost: true, seed: 41 });      // on the pier, west of where the porters set their jars down
   // pupils around Theano
   g.addNPC({ id: 'pupil1', name: 'A pupil', look: Object.assign(crowdLook(3), { height: 0.6, beard: 'none', hat: 'none', age: 'child' }), x: HOMES.theano[0] + 1.3, z: HOMES.theano[1] + 0.9, h: -2.2, pose: 'ground' });
   g.addNPC({ id: 'pupil2', name: 'A pupil', look: Object.assign(crowdLook(6), { height: 0.56, beard: 'none', hat: 'none', hairStyle: 'full', age: 'child' }), x: HOMES.theano[0] + 0.2, z: HOMES.theano[1] + 1.7, h: 3.0, pose: 'ground' });
@@ -335,16 +335,16 @@ export function begin(g, save) {
 // ------------------------------------------------------------------ Chapter 1: the first hour of last night (Republic, Book 1)
 function setupBook1(g, api) {
   const S = g.sites, C = { x: S.cephalus.x, z: S.cephalus.z };
-  const seat0 = [C.x + 0.7, C.z];            // the stool where Socrates sat
-  const watch = [C.x + 0.4, C.z + 3.0];      // where the player stands while a scene from last night plays
+  const seat0 = [C.x - 1.5 + Math.cos(-52 * PI / 180) * 2.2, C.z + Math.sin(-52 * PI / 180) * 2.2];   // the stool where Socrates sat (sS in setup)
+  const watch = [C.x - 1.5, C.z + 3.4];      // where the player stands while a scene from last night plays: south of the fire, clear of the altar
 
   // Play a scene from last night: the light changes to night, Socrates is in the room, and the edges of the picture darken.
   async function remember(gg, label, fn) {
     const soc = gg.npc('socrates'), mika = gg.npc('mika'), was = { x: soc.x, z: soc.z, h: soc.actor.heading }, envWas = gg.envName;
     await gg.ui.fade(1, 0.7);
     gg.busyEnv = true; gg.env('night', 0); gg.ui.memory(label);
-    soc.put(seat0[0], seat0[1], -PI / 2, 'sit'); mika.show(false);
-    gg.player.place(watch[0], watch[1], PI * 0.92); gg.cam.yaw = gg.player.heading; gg.snapCam = true;
+    soc.put(seat0[0], seat0[1], Math.atan2(C.x - 1.5 - seat0[0], C.z - seat0[1]), 'sit'); mika.show(false);
+    gg.player.place(watch[0], watch[1], PI * 0.97); gg.cam.yaw = gg.player.heading; gg.snapCam = true;
     await gg.ui.fade(0, 0.9);
     try { await fn(); } finally {
       await gg.ui.fade(1, 0.7);

@@ -824,7 +824,15 @@ export class Actor {
     }
     this.lift = damp(this.lift, (P.lift || 0) + Math.abs(s) * 0.028 * wk, 9, dt);
     this.rootX = damp(this.rootX, P.rootX || 0, 6, dt);
-    const lift = this.lift + this.lift0 + K.lift;
+    let lift = this.lift + this.lift0 + K.lift;
+    if (this.model && !P.feet && Math.abs(this.rootX) < 0.2) {
+      // A kit's ankle is higher above its sole than the low-polygon figure's. In poses that bend the legs by angle
+      // (sitting, kneeling) work out where the lower ankle ends up and raise the figure until that sole is on the ground.
+      const c = this.cur, kb = K.b, hx = c.hips[0] + kb.hips[0], hipY = lift + 0.93 + D.hipY;
+      let low = 9;
+      for (const s of ['L', 'R']) { const a1 = hx + c['thigh' + s][0] + kb['thigh' + s][0], a2 = a1 + c['shin' + s][0] + kb['shin' + s][0]; low = Math.min(low, hipY - D.thigh * Math.cos(a1) - D.shin * Math.cos(a2)); }
+      const need = D.ankle + 0.04 - low; if (need > 0) lift += Math.min(need, 0.08);
+    }
     bones.root.position.y = lift;
     bones.root.rotation.x = this.rootX;
     const shr = 0.035 * clamp(M.sh + K.shrug, -1, 1.5);

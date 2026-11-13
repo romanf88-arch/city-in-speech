@@ -82,6 +82,8 @@ export class NPC {
         const v = Math.min(pd > 7 ? 8.4 : pd > 3.2 ? 5.4 : 3.4, d * 2.5 + 0.8);
         a.heading = dampAngle(a.heading, Math.atan2(dx, dz), 9, dt);
         let nx = a.x + dx / d * v * dt, nz = a.z + dz / d * v * dt;
+        // A companion walks through walls it cannot path around, but it should step around people.
+        for (const o of this.g.npcs.values()) { if (o === this || o.hidden || o.space !== this.space) continue; const ex = nx - o.actor.x, ez = nz - o.actor.z, e = Math.hypot(ex, ez); if (e < 0.75 && e > 0.001) { nx += ex / e * (0.75 - e); nz += ez / e * (0.75 - e); } }
         [nx, nz] = sp.resolve(nx, nz, 0.28);
         if (sp.walkable(nx, nz) && Math.hypot(nx - a.x, nz - a.z) > v * dt * 0.25) { a.x = nx; a.z = nz; a.speed = v; this.stuck = 0; } else this.stuck = (this.stuck || 0) + dt;
       } else { this.moving = false; this.stuck = 0; if (Math.abs(player.speed) < 0.3) a.heading = dampAngle(a.heading, Math.atan2(player.x - a.x, player.z - a.z), 2.5, dt); }
