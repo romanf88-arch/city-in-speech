@@ -102,10 +102,10 @@ const FIRE = { cook: [0.55, 0.5, 0.1, 1, 0.6], griller: [0.6, 0.26, 0.04, 1.3, 0
 export function setupLife(g) {
   const w = g.world, list = [], problems = [];
   PLACES.forEach(([name, x, z, rot, opts], i) => {
-    const y0 = w.groundY(x, z), cos = Math.cos(rot), sin = Math.sin(rot);
+    const y0 = w.standY(x, z), cos = Math.cos(rot), sin = Math.sin(rot);
     const toWorld = (lx, lz) => [x + lx * cos + lz * sin, z - lx * sin + lz * cos];
     let v;
-    try { v = makeVignette(name, 500 + i * 7, Object.assign({ heightAt: (lx, lz) => { const p = toWorld(lx, lz); return w.groundY(p[0], p[1]) - y0; } }, opts || {})); }
+    try { v = makeVignette(name, 500 + i * 7, Object.assign({ heightAt: (lx, lz) => { const p = toWorld(lx, lz); return w.standY(p[0], p[1]) - y0; } }, opts || {})); }
     catch (e) { problems.push(name + ': ' + (e && e.message)); return; }
     if (!v) { problems.push(name + ': no such scene'); return; }
     v.group.position.set(x, y0, z); v.group.rotation.y = rot;

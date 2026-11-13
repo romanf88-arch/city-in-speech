@@ -137,6 +137,7 @@ export class World {
     scene.add(this.group);
     this.H = new Float32Array((NX + 1) * (NZ + 1));
     this.floors = [];
+    this.paved = new Map();                  // height of paving and streets by half-meter cell (see standY)
     this.colliders = [];
     this.hash = new Map();
     this.chunks = [];
@@ -174,6 +175,11 @@ export class World {
   }
 
   // Ground height including raised floors (platforms, piers).
+  // Paving and streets are drawn a few centimeters above the ground under them, so that the ground never shows
+  // through. People have to stand on what is drawn, or their feet are buried: these cells remember its height.
+  _mark(x, z, y) { const k = (Math.floor(x * 2) + 4096) * 8192 + Math.floor(z * 2) + 4096, o = this.paved.get(k); if (o === undefined || y > o) this.paved.set(k, y); }
+  // The height a person stands at: the paving where there is some, otherwise the ground or a raised floor.
+  standY(x, z) { const y = this.groundY(x, z), p = this.paved.get((Math.floor(x * 2) + 4096) * 8192 + Math.floor(z * 2) + 4096); return p !== undefined && p > y && p < y + 0.4 ? p : y; }
   groundY(x, z) {
     let y = this.terrainY(x, z);
     const fl = this.floors;
@@ -391,6 +397,10 @@ export class World {
       const s0 = side(i), s1 = side(i + 1), a = pts[i], b = pts[i + 1];
       const q = [[a[0] - s0[0], a[1] - s0[1]], [a[0] + s0[0], a[1] + s0[1]], [b[0] - s1[0], b[1] - s1[1]], [b[0] + s1[0], b[1] + s1[1]]]
         .map(([x, z]) => [x, this.terrainY(x, z) + lift, z]);
+      for (let t = 0; t <= 1.001; t += 0.25) for (let u = 0.04; u <= 0.97; u += 0.4 / Math.max(0.5, width)) {
+        const m = (k) => lerp(lerp(q[0][k], q[1][k], u), lerp(q[2][k], q[3][k], u), t);
+        this._mark(m(0), m(2), m(1));
+      }
       _c.copy(i % 2 ? ca : cb).multiplyScalar(0.95 + 0.1 * noise2(i * 0.7, 3));
       for (const v of [q[0], q[2], q[1], q[1], q[2], q[3]]) { pos.push(v[0], v[1], v[2]); col.push(_c.r, _c.g, _c.b); }
     }
@@ -405,6 +415,7 @@ export class World {
       const y = Math.max(this.terrainY(xa, za), this.terrainY(xb, za), this.terrainY(xa, zb), this.terrainY(xb, zb)) + lift;
       _c.copy(noise2(x * 1.3, z * 1.3) > 0.5 ? ca : cb).multiplyScalar(0.93 + 0.14 * noise2(x * 0.77 + 2, z * 0.77));
       for (const v of [[xa, za], [xa, zb], [xb, za], [xb, za], [xa, zb], [xb, zb]]) { pos.push(v[0], y, v[1]); col.push(_c.r, _c.g, _c.b); }
+      for (let cx = Math.floor(x * 2) / 2 + 0.25; cx < Math.min(x + tile, x1); cx += 0.5) for (let cz = Math.floor(z * 2) / 2 + 0.25; cz < Math.min(z + tile, z1); cz += 0.5) this._mark(cx, cz, y + 0.02);      // the stone's surface is drawn about 2 cm above the tile's own height
     }
     return this._flatMesh(pos, col, true, 'pave');
   }

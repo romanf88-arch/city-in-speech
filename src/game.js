@@ -132,7 +132,7 @@ export class Game {
     await this.kit.load('./assets/kit/');
     progress(0.6);
     const w = this.world;
-    this.spaces.world = { name: 'world', ground: (x, z) => w.groundY(x, z), walkable: (x, z) => w.walkable(x, z), resolve: (x, z, rr) => w.resolve(x, z, rr), solidAt: (x, y, z, p) => w.solidAt(x, y, z, p), surface: () => 'earth' };
+    this.spaces.world = { name: 'world', ground: (x, z) => w.standY(x, z), walkable: (x, z) => w.walkable(x, z), resolve: (x, z, rr) => w.resolve(x, z, rr), solidAt: (x, y, z, p) => w.solidAt(x, y, z, p), surface: () => 'earth' };
     this.spaces.lydia = this.spaces.world;
     // The player.
     this.player = new Actor({ skin: 'tan', hair: 0x3a2a1c, beard: 'short', robe: 0xd8cdb0, robe2: 0x6f7f8a, hat: 'petasos', ownMaterial: true }, 99);
