@@ -1,6 +1,9 @@
 // Loads the Blender asset kit and places instances of it in the world.
 import * as THREE from 'three';
 import { GLTFLoader } from '../vendor/GLTFLoader.js';
+import { makeRock, makeCaveMouth } from './rocks.js';
+import { makeProps, makeCrateStack } from './props.js';
+import { mergeGeometries } from '../vendor/BufferGeometryUtils.js';
 
 // Sizes [width x, height y, depth z] used for stand-in boxes if an asset is missing.
 const FALLBACK = {
@@ -65,6 +68,25 @@ export class Kit {
       }
       this.loaded = true;
     } catch (e) { console.warn('Kit not loaded, using stand-in boxes:', e.message); }
+    // Rocks: several shapes for each size, made in code (rocks.js), in place of one model each. A placed rock
+    // takes one of them by where it stands.
+    this.rockKinds = {};
+    for (const [id, count, detail] of [['rock_a', 5, 4], ['rock_b', 4, 5], ['rock_c', 3, 6], ['cliff_a', 3, 8]]) {
+      for (let v = 0; v < count; v++) {
+        const g = makeRock(id.charCodeAt(5) * 100 + v * 17 + 1, this.size(id), detail);
+        this.assets[id + '~' + v] = { parts: [{ geometry: this.surface ? this.surface.prepareAs(g, id, 'rockcut') : g, glow: false }], info: (this.assets[id] && this.assets[id].info) || null };
+      }
+      this.rockKinds[id] = count;
+    }
+    // Small things for doorways and the market (props.js), dressed by the surface pass like the rest.
+    const props = makeProps();
+    for (const id in props) {
+      const p = props[id], col = p.r ? [{ t: 'circle', x: 0, z: 0, r: p.r }] : p.box ? [{ t: 'box', x: 0, z: 0, hx: p.box[0], hz: p.box[1] }] : [];
+      this.assets[id] = { parts: p.parts.map(([g, type]) => ({ geometry: this.surface ? this.surface.prepareAs(g, id, type) : g, glow: false })), info: { size: p.size, colliders: col } };
+      SMALL.add(id);
+    }
+    if (this.assets.crate_stack) this.assets.crate_stack.parts = makeCrateStack().map(([g, type]) => ({ geometry: this.surface ? this.surface.prepareAs(g, 'crate_stack', type) : g, glow: false }));
+    if (this.assets.cave_mouth) { const g = makeCaveMouth(mergeGeometries); this.assets.cave_mouth.parts = [{ geometry: this.surface ? this.surface.prepareAs(g, 'cave_mouth', 'rockcut') : g, glow: false }]; }
   }
 
   // The material for ordinary kit parts: the surface module's if one is attached, the plain one otherwise.
@@ -116,7 +138,7 @@ export class Kit {
 
   // Place a static instance. Returns { x, y, z, rot, anchor(name) }.
   place(id, x, z, rot = 0, opts = {}) {
-    const s = opts.scale || 1, y = opts.y != null ? opts.y : this.world.terrainY(x, z) + (opts.lift || 0), zone = opts.zone || 'town';
+    const s = opts.scale || 1, y = opts.y != null ? opts.y : this.groundUnder(id, x, z, rot, s) + (opts.lift || 0), zone = opts.zone || 'town';
     if (this.flora && FLORA_IDS.has(id)) {
       this.flora.add(id, x, y, z, rot, s, zone);
       const reg = this._register(id, x, y, z, rot, s, opts);
@@ -124,7 +146,7 @@ export class Kit {
     }
     const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rot), new THREE.Vector3(s, opts.scaleY || s, s));
     // Instances are grouped by map cell so that far-off ones are skipped when drawing and when casting shadows.
-    const key = id + '|' + zone + '|' + Math.floor(x / CELL) + '|' + Math.floor(z / CELL);
+    const key = this.shapeOf(id, x, z) + '|' + zone + '|' + Math.floor(x / CELL) + '|' + Math.floor(z / CELL);
     (this.placements[key] || (this.placements[key] = [])).push(m);
     const reg = this._register(id, x, y, z, rot, s, opts);
     return { id, x, y, z, rot, colliders: reg.colliders, anchor: (name) => reg.anchors[name] || new THREE.Vector3(x, y, z) };
@@ -132,7 +154,7 @@ export class Kit {
 
   // A single movable object (not instanced), for things that appear, move, or vanish.
   spawn(id, x, z, rot = 0, opts = {}) {
-    const a = this._asset(id), s = opts.scale || 1, y = opts.y != null ? opts.y : this.world.terrainY(x, z);
+    const a = this._asset(this.shapeOf(id, x, z)), s = opts.scale || 1, y = opts.y != null ? opts.y : this.groundUnder(id, x, z, rot, s);
     if (this.flora && FLORA_IDS.has(id)) {
       const parent = opts.parent || this.zone(opts.zone || 'town'), obj = this.flora.spawn(id, x, y, z, rot, s, parent);
       const reg = this._register(id, x, y, z, rot, s, opts);
@@ -152,6 +174,25 @@ export class Kit {
     return g;
   }
 
+  // The ground height to set an asset on. A rock goes on the lowest ground under it, so that on a slope its downhill
+  // side does not hang in the air (it is made with a buried foot for this). Everything else uses its center.
+  groundUnder(id, x, z, rot, s) {
+    const w = this.world;
+    if (!this.rockKinds || !this.rockKinds[id]) return w.terrainY(x, z);
+    const sz = this.size(id), hx = sz[0] / 2 * s * 0.8, hz = sz[2] / 2 * s * 0.8, c = Math.cos(rot), sn = Math.sin(rot);
+    let y = w.terrainY(x, z);
+    for (const [ax, az] of [[hx, 0], [-hx, 0], [0, hz], [0, -hz], [hx * 0.7, hz * 0.7], [-hx * 0.7, hz * 0.7], [hx * 0.7, -hz * 0.7], [-hx * 0.7, -hz * 0.7]]) y = Math.min(y, w.terrainY(x + ax * c + az * sn, z - ax * sn + az * c));
+    return y;
+  }
+
+  // Which of an asset's shapes to use at a place (only rocks have more than one).
+  shapeOf(id, x, z) {
+    const n = this.rockKinds && this.rockKinds[id];
+    if (!n) return id;
+    const h = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453);
+    return id + '~' + Math.floor((h - Math.floor(h)) * n);
+  }
+
   zone(name) {
     if (!this.zones[name]) { this.zones[name] = new THREE.Group(); this.zones[name].name = 'zone:' + name; this.world.group.add(this.zones[name]); }
     return this.zones[name];
@@ -162,22 +203,72 @@ export class Kit {
     for (const c of this.chunks) { const d = Math.hypot(c.x - cx, c.z - cz) - c.r; c.mesh.visible = d < (c.small ? Math.min(far, 95) : far); }
   }
 
-  // Turn all recorded placements into instanced meshes.
+  // Turn all recorded placements into meshes. Most placements are one of a kind in their map cell (212 of 307 groups
+  // in the town held a single copy), so instancing saved nothing for them and each still cost a draw call: in the
+  // market, 173 for the town picture and 81 for the sun's shadow picture, at about 14 microseconds each on the page's
+  // side (2026-11-15). Now every surface-dressed part in a cell is merged into one shape per zone, material, shadow
+  // setting, and size class (small things are still hidden from 95 m by cull). Parts placed more than BAKE_MAX times
+  // in a cell stay instanced. ?bake=0 in the address keeps the old way, for comparing.
   build() {
-    const NO_SHADOW = new Set(['grass_tuft']);
+    const NO_SHADOW = new Set(['grass_tuft']), BAKE_MAX = 6;
+    const bakeOn = !/[?&]bake=0/.test((typeof location !== 'undefined' && location.search) || '');
+    const groups = new Map();
+    const instanced = (id, zone, list, p) => {
+      const im = new THREE.InstancedMesh(p.geometry, p.glow ? this.glowMat : this.mat(), list.length);
+      for (let i = 0; i < list.length; i++) im.setMatrixAt(i, list[i]);
+      im.instanceMatrix.needsUpdate = true;
+      im.castShadow = !p.glow && !NO_SHADOW.has(id); im.receiveShadow = !p.glow;
+      im.computeBoundingSphere();
+      this.zone(zone).add(im);
+      this.chunks.push({ mesh: im, x: im.boundingSphere.center.x, z: im.boundingSphere.center.z, r: im.boundingSphere.radius, small: SMALL.has(id) });
+    };
     for (const key in this.placements) {
-      const [id, zone] = key.split('|'), list = this.placements[key], a = this._asset(id);
+      const [id, zone, cx, cz] = key.split('|'), list = this.placements[key], a = this._asset(id);
       for (const p of a.parts) {
-        const im = new THREE.InstancedMesh(p.geometry, p.glow ? this.glowMat : this.mat(), list.length);
-        for (let i = 0; i < list.length; i++) im.setMatrixAt(i, list[i]);
-        im.instanceMatrix.needsUpdate = true;
-        im.castShadow = !p.glow && !NO_SHADOW.has(id); im.receiveShadow = !p.glow;
-        im.computeBoundingSphere();
-        this.zone(zone).add(im);
-        this.chunks.push({ mesh: im, x: im.boundingSphere.center.x, z: im.boundingSphere.center.z, r: im.boundingSphere.radius, small: SMALL.has(id) });
+        const g = p.geometry, cast = !p.glow && !NO_SHADOW.has(id);
+        if (!bakeOn || p.glow || !g.attributes.aSurf || g.index || list.length > BAKE_MAX) { instanced(id, zone, list, p); continue; }
+        const sig = Object.keys(g.attributes).sort().map((k) => k + g.attributes[k].itemSize + g.attributes[k].array.constructor.name).join(',');
+        const bk = [zone, cx, cz, cast ? 1 : 0, SMALL.has(id) ? 1 : 0, sig].join('|');
+        let G = groups.get(bk);
+        if (!G) groups.set(bk, (G = { zone, cast, small: SMALL.has(id), items: [] }));
+        for (const m of list) G.items.push([g, m]);
       }
+    }
+    for (const G of groups.values()) {
+      const geo = bakeParts(G.items), mesh = new THREE.Mesh(geo, this.mat());
+      mesh.castShadow = G.cast; mesh.receiveShadow = true; mesh.matrixAutoUpdate = false;
+      geo.computeBoundingSphere();
+      this.zone(G.zone).add(mesh);
+      this.chunks.push({ mesh, x: geo.boundingSphere.center.x, z: geo.boundingSphere.center.z, r: geo.boundingSphere.radius, small: G.small });
     }
     this.placements = {};
     if (this.flora) this.flora.build();
   }
+}
+
+// Merge copies of surface-dressed parts into one shape in world space. items: [[geometry, matrix]]. Each part's
+// own values keep their meaning: the picture's across-direction (aT) turns and scales with the copy as the shader
+// would have turned it, normals turn, and the height in the model (aY) and everything else is copied as it is.
+const _nm = new THREE.Matrix3(), _bv = new THREE.Vector3();
+function bakeParts(items) {
+  let n = 0;
+  for (const [g] of items) n += g.attributes.position.count;
+  const names = Object.keys(items[0][0].attributes), out = {};
+  for (const k of names) { const a = items[0][0].attributes[k]; out[k] = new a.array.constructor(n * a.itemSize); }
+  let o = 0;
+  for (const [g, m] of items) {
+    const c = g.attributes.position.count, e = m.elements;
+    _nm.getNormalMatrix(m);
+    for (const k of names) {
+      const src = g.attributes[k], s = src.array, d = out[k], w = src.itemSize;
+      if (k === 'position') for (let i = 0; i < c; i++) { _bv.fromArray(s, i * 3).applyMatrix4(m); _bv.toArray(d, (o + i) * 3); }
+      else if (k === 'normal') for (let i = 0; i < c; i++) { _bv.fromArray(s, i * 3).applyMatrix3(_nm).normalize(); _bv.toArray(d, (o + i) * 3); }
+      else if (k === 'aT') for (let i = 0; i < c; i++) { const x = s[i * 3], y = s[i * 3 + 1], z = s[i * 3 + 2], j = (o + i) * 3; d[j] = e[0] * x + e[4] * y + e[8] * z; d[j + 1] = e[1] * x + e[5] * y + e[9] * z; d[j + 2] = e[2] * x + e[6] * y + e[10] * z; }
+      else d.set(s.subarray(0, c * w), o * w);
+    }
+    o += c;
+  }
+  const geo = new THREE.BufferGeometry();
+  for (const k of names) { const a = items[0][0].attributes[k]; geo.setAttribute(k, new THREE.BufferAttribute(out[k], a.itemSize, a.normalized)); }
+  return geo;
 }

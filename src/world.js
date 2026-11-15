@@ -110,23 +110,45 @@ for (const k in PAL) PALC[k] = new THREE.Color(PAL[k]);
 // the shore. bump returns a small tilt of the surface so the ground catches the light.
 export const GROUND_GLSL = /* glsl */`
 uniform sampler2D uGNoise, uGNoise2;
-vec3 groundColor(vec3 base, vec3 wp, float ny, out vec2 bump) {
-  vec4 nf = texture2D(uGNoise, wp.xz * 0.31);
-  vec4 nc = texture2D(uGNoise, wp.xz * 0.045 + 0.4);
-  vec4 nd = texture2D(uGNoise, wp.xz * 1.37);                  // grit, only seen close up
-  bump = texture2D(uGNoise2, wp.xz * 0.45).rg - 0.5;
+// The color, from the four detail samples: fine (nf), coarse (nc), grit (nd). rock returns how rocky it is.
+vec3 groundMix(vec3 base, vec3 wp, float ny, vec4 nf, vec4 nc, vec4 nd, out float rock) {
   vec3 c = base * (0.62 + 0.34 * nf.g + 0.16 * nc.r + 0.22 * nd.g + 0.12 * (nd.a - 0.5));
   c = mix(c, c * vec3(1.12, 1.04, 0.80), smoothstep(0.45, 0.8, nf.r) * 0.5);      // straw-colored tufts
   float earth = smoothstep(0.62, 0.74, nc.b * 0.65 + nf.g * 0.25 + nc.g * 0.2);
   c = mix(c, vec3(0.23, 0.16, 0.095) * (0.75 + 0.5 * nf.g), earth * 0.4);
-  float rock = smoothstep(0.15, 0.28, (1.0 - ny) + (nc.g - 0.5) * 0.10 + (nf.r - 0.5) * 0.05);
+  vec4 nm = texture2D(uGNoise, wp.xz * 0.013 + vec2(0.27, 0.61));       // large patches, 20 to 60 m across
+  c *= 0.86 + 0.28 * nm.g;
+  c = mix(c, c * vec3(0.84, 0.78, 0.72), smoothstep(0.55, 0.75, nm.b) * 0.55);   // trodden: darker, browner
+  c = mix(c, c * vec3(1.08, 1.05, 0.97), smoothstep(0.6, 0.8, nm.r) * 0.5);     // pale dust
+  rock = smoothstep(0.15, 0.28, (1.0 - ny) + (nc.g - 0.5) * 0.10 + (nf.r - 0.5) * 0.05);
   vec3 rc = mix(vec3(0.25, 0.225, 0.19), vec3(0.50, 0.47, 0.41), nf.r * 0.4 + nc.r * 0.6) * (0.74 + 0.3 * nf.g + 0.24 * nd.g);
   rc = mix(rc, base * 0.8, smoothstep(0.55, 0.8, nc.b) * 0.45);          // tufts holding on between the rocks
   c = mix(c, rc, rock);
   float sand = 1.0 - smoothstep(0.85, 1.75, wp.y + (nc.g - 0.5) * 0.6);
   vec3 sc = vec3(0.66, 0.56, 0.36) * (0.88 + 0.24 * nf.g) * mix(0.6, 1.0, smoothstep(-0.15, 0.4, wp.y));
   c = mix(c, sc, sand * (1.0 - rock * 0.6));
+  return c;
+}
+vec3 groundColor(vec3 base, vec3 wp, float ny, out vec2 bump) {
+  vec4 nf = texture2D(uGNoise, wp.xz * 0.31);
+  vec4 nc = texture2D(uGNoise, wp.xz * 0.045 + 0.4);
+  vec4 nd = texture2D(uGNoise, wp.xz * 1.37);                  // grit, only seen close up
+  bump = texture2D(uGNoise2, wp.xz * 0.45).rg - 0.5;
+  float rock; vec3 c = groundMix(base, wp, ny, nf, nc, nd, rock);
   bump *= mix(0.5, 1.4, rock);
+  return c;
+}
+// The same for the playable ground, where the slope is known: on steep ground the detail is also laid on the
+// two upright planes and blended by how much the ground faces each way, so it is not smeared down the slope
+// (the samples for the upright planes are only taken where they count).
+vec3 groundColorN(vec3 base, vec3 wp, vec3 N, out vec2 bump) {
+  vec3 w = pow(abs(N), vec3(4.0)); w /= w.x + w.y + w.z;
+  vec4 nf = texture2D(uGNoise, wp.xz * 0.31) * w.y, nc = texture2D(uGNoise, wp.xz * 0.045 + 0.4) * w.y, nd = texture2D(uGNoise, wp.xz * 1.37) * w.y;
+  vec2 b = (texture2D(uGNoise2, wp.xz * 0.45).rg - 0.5) * w.y;
+  if (w.x > 0.02) { vec2 p = wp.zy; nf += texture2D(uGNoise, p * 0.31) * w.x; nc += texture2D(uGNoise, p * 0.045 + 0.4) * w.x; nd += texture2D(uGNoise, p * 1.37) * w.x; b += (texture2D(uGNoise2, p * 0.45).rg - 0.5) * w.x; }
+  if (w.z > 0.02) { vec2 p = wp.xy; nf += texture2D(uGNoise, p * 0.31) * w.z; nc += texture2D(uGNoise, p * 0.045 + 0.4) * w.z; nd += texture2D(uGNoise, p * 1.37) * w.z; b += (texture2D(uGNoise2, p * 0.45).rg - 0.5) * w.z; }
+  float rock; vec3 c = groundMix(base, wp, N.y, nf, nc, nd, rock);
+  bump = b * mix(0.5, 1.4, rock);
   return c;
 }`;
 
@@ -154,7 +176,7 @@ export class World {
         .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vGW = (modelMatrix * vec4(transformed, 1.0)).xyz; vGN = normal;');
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vGW;\nvarying vec3 vGN;\n' + GROUND_GLSL)
-        .replace('#include <color_fragment>', '#include <color_fragment>\n  vec2 gBump; diffuseColor.rgb = groundColor(diffuseColor.rgb, vGW, normalize(vGN).y, gBump);')
+        .replace('#include <color_fragment>', '#include <color_fragment>\n  vec2 gBump; diffuseColor.rgb = groundColorN(diffuseColor.rgb, vGW, normalize(vGN), gBump);')
         .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n  normal = normalize(normal + (viewMatrix * vec4(gBump.x, 0.0, gBump.y, 0.0)).xyz * 0.85);');
     };
     this.computeHeights(0, NX, 0, NZ);
@@ -473,10 +495,14 @@ export class Sea {
       transparent: false, blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     });
     this.mat.color = this.u.uSea.value;        // the game writes the light profile's sea color here
-    const g = new THREE.PlaneGeometry(1400, 620, 1, 1);
-    g.rotateX(-Math.PI / 2);
+    // A grid with 1.8 m cells near the harbor, growing to 25 m far out, so the waves (SEA_VERT) can move it.
+    const axis = (a, b, inner, from) => { const out = []; for (let v = a; v < b; ) { out.push(v); const o = Math.max(0, Math.abs(v - from) - inner); v += 1.8 + o * 0.0418; } out.push(b); return out; };
+    const xs = axis(-700, 700, 130, 0), zs = axis(20, 640, 150, 20), pos = [], idx = [];
+    for (const z of zs) for (const x of xs) pos.push(x, 0, z);
+    for (let j = 0; j < zs.length - 1; j++) for (let i = 0; i < xs.length - 1; i++) { const a = j * xs.length + i, b = a + 1, c = a + xs.length, d = c + 1; idx.push(a, c, b, b, c, d); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 330), 800);
     this.mesh = new THREE.Mesh(g, this.mat);
-    this.mesh.position.set(0, 0, 330);
     this.mesh.renderOrder = 800;
     scene.add(this.mesh);
     this.t = 0; this.sky = null;
@@ -504,6 +530,23 @@ export class Sea {
     for (const k of ['uTop', 'uBot', 'uAnti', 'uGlow', 'uLight', 'uHemi', 'uFog', 'uHzSun', 'uHzAnti', 'uSunDir', 'uFogP', 'uMisc']) this.u[k] = sky.u[k];
   }
   update(dt) { this.t += dt; if (!this.sky) this.u.uMisc.value.w = this.t; }
+  // A dark, wet band on the stone where the water meets the quay and pier walls: dark and greenish at the
+  // waterline, fading out half a meter above it. lines: [x0, z0, x1, z1, outward x, outward z].
+  wetBand(scene, lines) {
+    const pos = [], col = [], idx = [], rows = [[-0.45, 0.13, 0.12, 0.09, 0.9], [0.16, 0.15, 0.16, 0.10, 0.8], [0.34, 0.2, 0.19, 0.15, 0.45], [0.62, 0.24, 0.22, 0.18, 0.0]];
+    for (const [x0, z0, x1, z1, nx, nz] of lines) {
+      const len = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(len / 2));
+      for (let i = 0; i <= n; i++) {
+        const t = i / n, x = x0 + (x1 - x0) * t + nx * 0.03, z = z0 + (z1 - z0) * t + nz * 0.03, wob = Math.sin(i * 1.7) * 0.06 + Math.sin(i * 0.41) * 0.08;
+        for (const [y, r, g, b, al] of rows) { pos.push(x, y + (y > 0 ? wob : 0), z); col.push(r, g, b, al); }
+      }
+      const base = pos.length / 3 - (n + 1) * rows.length;
+      for (let i = 0; i < n; i++) for (let k = 0; k < rows.length - 1; k++) { const a = base + i * rows.length + k, b2 = a + rows.length; idx.push(a, b2, a + 1, a + 1, b2, b2 + 1); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4)); g.setIndex(idx); g.computeBoundingSphere();
+    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    m.renderOrder = 790; m.receiveShadow = true; scene.add(m); this.wet = m; return m;
+  }
 }
 
 // ---------------------------------------------------------------- sky and light
@@ -515,13 +558,15 @@ export class Sea {
 //   haze             how thick the far haze is (1 is a clear summer day)
 //   moon             1 when the light in the sky is the moon
 export const ENV = {
-  afternoon: { top: 0x2f6fc4, bot: 0xc2daec, anti: 0xb6d3ee, glow: 0xfff0c8, sunEl: 0.92, sunAz: 2.3, sun: 0xfff1d6, sunI: 2.5, hemiSky: 0xbcd7f2, hemiGnd: 0x8a7a5c, hemiI: 1.15, fog: 0xbcd3e2, hzSun: 0xc8d9e4, hzAnti: 0xb6cfe2, fogN: 90, fogF: 430, stars: 0, exp: 1.0, sea: 0x2f7391, cl: 0xffffff, cs: 0x93a6c2, clK: 1.5, cov: 0.36, cir: 0.3, wind: 1, haze: 1, moon: 0 },
+  // Late afternoon (the new look): the sun low in the west-southwest, warm light, cooler shade. The old midday
+  // light, with the sun high in the north-east, was: sunEl 0.92, sunAz 2.3, sun 0xfff1d6, sunI 2.5, hemiSky 0xbcd7f2, hemiI 1.15.
+  afternoon: { top: 0x5480b6, bot: 0xf0d3a6, anti: 0xc6c6cc, glow: 0xffcc8a, sunEl: 0.45, sunAz: -1.2, sun: 0xffc68a, sunI: 2.7, hemiSky: 0xa2bade, hemiGnd: 0x8e7656, hemiI: 0.9, fog: 0xcdc6b8, hzSun: 0xe8cfa4, hzAnti: 0xb6bfcc, fogN: 90, fogF: 430, stars: 0, exp: 1.0, sea: 0x2f6a86, cl: 0xfff0da, cs: 0x8c96b2, clK: 1.5, cov: 0.32, cir: 0.3, wind: 1, haze: 0.75, moon: 0 },
   dusk: { top: 0x26356e, bot: 0xff9a4e, anti: 0x5c5f9c, glow: 0xffb066, sunEl: 0.09, sunAz: 2.75, sun: 0xffa055, sunI: 1.9, hemiSky: 0x8f8fc8, hemiGnd: 0x7a5a48, hemiI: 0.95, fog: 0xd9a078, hzSun: 0xf0a868, hzAnti: 0xb298a4, fogN: 70, fogF: 380, stars: 0.15, exp: 1.0, sea: 0x3a5f84, cl: 0xffb884, cs: 0x4c4666, clK: 1.5, cov: 0.2, cir: 0.62, wind: 0.8, haze: 1.3, moon: 0 },
   night: { top: 0x050916, bot: 0x1a2748, anti: 0x101a36, glow: 0x9fb4e8, sunEl: 0.7, sunAz: 0.9, sun: 0x9db4e6, sunI: 0.75, hemiSky: 0x4a5c94, hemiGnd: 0x24222c, hemiI: 1.25, fog: 0x141c36, hzSun: 0x1b2646, hzAnti: 0x121a33, fogN: 45, fogF: 300, stars: 1, exp: 1.15, sea: 0x10203c, cl: 0x93a6cc, cs: 0x0d1424, clK: 0.5, cov: 0.24, cir: 0.3, wind: 0.7, haze: 1.2, moon: 1 },
   dawn: { top: 0x4a78c0, bot: 0xffd9a6, anti: 0xa3b4da, glow: 0xfff2c0, sunEl: 0.16, sunAz: -2.2, sun: 0xffd9a0, sunI: 2.2, hemiSky: 0xb9c9ea, hemiGnd: 0x8c7658, hemiI: 1.05, fog: 0xf0d6b4, hzSun: 0xf8dcb0, hzAnti: 0xdccfc6, fogN: 80, fogF: 420, stars: 0.05, exp: 1.05, sea: 0x4a7a98, cl: 0xffe8cc, cs: 0x8e8eac, clK: 1.4, cov: 0.15, cir: 0.3, wind: 0.6, haze: 1.9, moon: 0 },
   lydia: { top: 0x2c7acc, bot: 0xcfe6ee, anti: 0xc0dcee, glow: 0xfff6d8, sunEl: 0.85, sunAz: 1.2, sun: 0xfff6e0, sunI: 2.6, hemiSky: 0xc4def2, hemiGnd: 0x7f8a56, hemiI: 1.2, fog: 0xcfe2ea, hzSun: 0xd6e6ea, hzAnti: 0xc8deea, fogN: 80, fogF: 330, stars: 0, exp: 1.0, sea: 0x2f7391, cl: 0xffffff, cs: 0x9ab0c8, clK: 1.5, cov: 0.07, cir: 0.1, wind: 0.8, haze: 0.7, moon: 0 },
   storm: { top: 0x1c222c, bot: 0x4a5058, anti: 0x42484f, glow: 0x8a94a0, sunEl: 0.7, sunAz: 1.2, sun: 0x9aa4b4, sunI: 0.9, hemiSky: 0x5a6470, hemiGnd: 0x3a3c36, hemiI: 0.9, fog: 0x3c434c, hzSun: 0x40474f, hzAnti: 0x3a4149, fogN: 25, fogF: 170, stars: 0, exp: 0.95, sea: 0x2a3a48, cl: 0x8e969e, cs: 0x2a3037, clK: 0.8, cov: 1.0, cir: 0, wind: 4.5, haze: 3.5, moon: 0 },
-  cave: { top: 0x020202, bot: 0x020202, anti: 0x020202, glow: 0x000000, sunEl: 0.9, sunAz: 0, sun: 0x000000, sunI: 0, hemiSky: 0x6a5442, hemiGnd: 0x2e2118, hemiI: 1.0, fog: 0x0a0806, hzSun: 0x0a0806, hzAnti: 0x0a0806, fogN: 18, fogF: 95, stars: 0, exp: 1.05, sea: 0x10203c, cl: 0x000000, cs: 0x000000, clK: 0, cov: 0, cir: 0, wind: 0, haze: 0, moon: 0 },
+  cave: { top: 0x020202, bot: 0x020202, anti: 0x020202, glow: 0x000000, sunEl: 0.9, sunAz: 0, sun: 0x000000, sunI: 0, hemiSky: 0x64493a, hemiGnd: 0x30211a, hemiI: 0.6, fog: 0x0a0806, hzSun: 0x0a0806, hzAnti: 0x0a0806, fogN: 18, fogF: 95, stars: 0, exp: 0.92, sea: 0x10203c, cl: 0x000000, cs: 0x000000, clK: 0, cov: 0, cir: 0, wind: 0, haze: 0, moon: 0 },
 };
 const COLOR_KEYS = ['top', 'bot', 'anti', 'glow', 'sun', 'hemiSky', 'hemiGnd', 'fog', 'hzSun', 'hzAnti', 'sea', 'cl', 'cs'];
 const NUM_KEYS = ['sunEl', 'sunAz', 'sunI', 'hemiI', 'fogN', 'fogF', 'stars', 'exp', 'clK', 'cov', 'cir', 'wind', 'haze', 'moon'];
@@ -531,12 +576,20 @@ const NUM_KEYS = ['sunEl', 'sunAz', 'sunI', 'hemiI', 'fogN', 'fogF', 'stars', 'e
 // that is fully fogged and haze that is fully thick come out as exactly the same color.
 export const HAZE_GLSL = /* glsl */`
 uniform vec3 uFog, uHzSun, uHzAnti, uSunDir;
+// A color as it goes on screen. When the finishing pass (post.js) draws the scene it signals with a negative
+// exposure, and the color is screen-encoded here because three.js does not do it when drawing into a picture.
+vec3 lookOut(vec3 c) {
+#ifndef TONE_MAPPING
+  if (toneMappingExposure < 0.0) return lookSRGB(c);
+#endif
+  return linearToOutputTexel(vec4(c, 1.0)).rgb;
+}
 uniform vec3 uFogP;                       // x fog near, y fog far, z haze thickness
 vec3 hazeColor(vec3 dir) {
   vec2 h = normalize(dir.xz + vec2(1e-5, 0.0)), s = normalize(uSunDir.xz + vec2(1e-5, 0.0));
   float a = dot(h, s), w = abs(a); w = w * w * (3.0 - 2.0 * w);
   vec3 c = mix(uFog, a > 0.0 ? uHzSun : uHzAnti, w);
-  return linearToOutputTexel(vec4(c, 1.0)).rgb;
+  return lookOut(c);
 }
 // d distance from the eye, vz depth along the view, y0 eye height, y1 height of the point.
 // cap is how much of the thick ground mist far ground gets. nearK = 1 gives exactly the scene fog.
@@ -591,36 +644,51 @@ vec3 atmosphere(vec3 d, float mu) {
 // Water color at a point P on the sea, seen along the direction d. depth is the water depth in
 // metres. Used by the sea sheet near the town and by the sky dome for the far water.
 const SEA_GLSL = /* glsl */`
-vec3 seaColor(vec3 P, vec3 d, float depth) {
+vec3 seaColorN(vec3 P, vec3 d, float depth, vec3 nG) {
   float tm = uMisc.w;
   // Three layers of ripples moving different ways. The fine one fades by itself with distance.
   vec2 w = (texture2D(uNoise2, P.xz * 0.07 + vec2(0.023, 0.014) * tm).rg - 0.5) * 0.8
          + (texture2D(uNoise2, P.xz * 0.011 + vec2(0.013, 0.008) * tm).rg - 0.5)
          + (texture2D(uNoise2, P.xz * 0.0027 - vec2(0.004, -0.006) * tm).rg - 0.5);
-  vec3 n = normalize(vec3(w.x * 0.42, 1.0, w.y * 0.42));
+  vec3 n = normalize(vec3(w.x * 0.48 + nG.x / max(nG.y, 0.2), 1.0, w.y * 0.48 + nG.z / max(nG.y, 0.2)));
   // The flatter you look across the water, the more sky it mirrors.
   float F = 0.03 + 0.97 * pow(1.0 - max(dot(-d, n), 0.0), 5.0);
-  F = min(F, 0.62) * 0.9;
+  F = min(F, 0.72) * 0.9;
   vec3 r = reflect(d, n); r.y = abs(r.y) * 0.8 + 0.06; r = normalize(r);
   vec3 lightIn = (uLight * max(uSunDir.y, 0.0) + uHemi) * 0.3183;
-  vec3 deep = uSea * lightIn;
-  vec3 shallow = (uSea * 0.4 + vec3(0.09, 0.40, 0.38)) * lightIn * 1.3;
+  vec3 deep = uSea * lightIn * 0.78;
+  vec3 shallow = (uSea * 0.5 + vec3(0.07, 0.29, 0.27)) * lightIn * 1.15;
   vec3 col = mix(mix(shallow, deep, 1.0 - exp(-depth * 1.1)), atmosphere(r, dot(r, uSunDir)), F);
   // Glitter: a tall narrow streak of broken light under the sun or moon.
   vec3 rs = normalize(vec3(d.x, mix(-d.y, uSunDir.y, 0.8), d.z) + vec3(w.x, 0.0, w.y) * 0.16);
   col += uGlow * uMisc.z * pow(max(dot(rs, uSunDir), 0.0), 260.0) * 2.5;
   return col;
-}`;
+}
+vec3 seaColor(vec3 P, vec3 d, float depth) { return seaColorN(P, d, depth, vec3(0.0, 1.0, 0.0)); }`;
 
+// Harbor swell: four Gerstner waves (each point moves in a small circle, so crests sharpen and troughs flatten),
+// strongest in the harbor, gone by 300 m out so the sheet meets the flat far water drawn by the sky dome.
 const SEA_VERT = /* glsl */`
-varying vec3 vW;
+uniform vec4 uMisc;
+varying vec3 vW; varying vec3 vN; varying float vCrest;
 void main() {
   vec4 wp = modelMatrix * vec4(position, 1.0);
-  vW = wp.xyz;
-  gl_Position = projectionMatrix * viewMatrix * wp;
+  float t = uMisc.w, fade = 1.0 - smoothstep(160.0, 300.0, length(wp.xz - vec2(0.0, 70.0)));
+  vec3 p = wp.xyz, n = vec3(0.0, 1.0, 0.0);
+  // direction x, direction z, wavelength (m), height (m)
+  vec4 W[4]; W[0] = vec4(0.8, 0.6, 7.0, 0.07); W[1] = vec4(-0.28, 0.96, 5.5, 0.045); W[2] = vec4(0.95, -0.31, 11.0, 0.085); W[3] = vec4(0.45, 0.89, 17.0, 0.06);
+  float h = 0.0;
+  for (int i = 0; i < 4; i++) {
+    vec2 D = normalize(W[i].xy); float k = 6.2832 / W[i].z, c = sqrt(9.8 / k), a = W[i].w * fade, Q = 0.55;
+    float f = k * (dot(D, wp.xz) - c * t * 0.8) + float(i) * 1.7;
+    p.xz += Q * a * D * cos(f); p.y += a * sin(f); h += a * sin(f);
+    n.xz -= D * k * a * cos(f); n.y -= Q * k * a * sin(f);
+  }
+  vW = p; vN = normalize(n); vCrest = h;
+  gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
 }`;
 const SEA_FRAG = /* glsl */`
-varying vec3 vW;
+varying vec3 vW; varying vec3 vN; varying float vCrest;
 uniform vec3 uTop, uBot, uAnti, uGlow, uSea, uLight, uHemi;
 uniform vec4 uMisc, uShoreBox;
 uniform sampler2D uNoise, uNoise2, uShore;
@@ -631,12 +699,22 @@ void main() {
   vec3 V = vW - cameraPosition; float t = length(V); vec3 d = V / t;
   float bed = texture2D(uShore, (vW.xz - uShoreBox.xy) * uShoreBox.zw).r * 8.0 - 6.0;
   float depth = max(-bed, 0.0);
-  vec3 col = seaColor(vW, d, depth);
+  vec3 col = seaColorN(vW, d, depth, vN);
+  // Near the quay and the piers the water mirrors the stone, not the sky.
+  vec2 sb = (vW.xz - uShoreBox.xy) * uShoreBox.zw, so = vec2(2.6) * uShoreBox.zw;
+  float wall = max(max(texture2D(uShore, sb + vec2(so.x, 0.0)).r, texture2D(uShore, sb - vec2(so.x, 0.0)).r),
+                   max(texture2D(uShore, sb + vec2(0.0, so.y)).r, texture2D(uShore, sb - vec2(0.0, so.y)).r)) * 8.0 - 6.0;
+  float nearWall = smoothstep(-0.5, 1.2, wall) * smoothstep(-0.3, -1.5, bed);
+  vec3 lightIn0 = (uLight * max(uSunDir.y, 0.0) + uHemi) * 0.3183;
+  float Fw = 0.03 + 0.97 * pow(1.0 - max(dot(-d, vN), 0.0), 5.0);
+  col = mix(col, vec3(0.30, 0.27, 0.22) * lightIn0, nearWall * clamp(Fw * 1.6 + 0.25, 0.0, 0.75));
+  // Light through the crests, toward the sun.
+  col += vec3(0.04, 0.12, 0.10) * lightIn0 * smoothstep(0.03, 0.16, vCrest) * pow(max(dot(normalize(vec3(d.x, 0.0, d.z)), normalize(vec3(uSunDir.x, 0.0, uSunDir.z))), 0.0), 2.0);
   // Foam where the water is very shallow, lapping in and out.
   float fn = texture2D(uNoise, vW.xz * 0.09 + vec2(0.017, -0.012) * uMisc.w).g;
   float lap = 0.5 + 0.5 * sin(depth * 6.0 - uMisc.w * 1.2 + fn * 5.0);
   float foam = smoothstep(1.1, 0.1, depth + (fn - 0.5) * 0.7) * (0.45 + 0.55 * lap);
-  col = mix(col, vec3(0.92, 0.95, 0.95) * (uLight * max(uSunDir.y, 0.0) + uHemi) * 0.3183, foam * 0.85);
+  col = mix(col, vec3(0.92, 0.95, 0.95) * (uLight * max(uSunDir.y, 0.0) + uHemi) * 0.3183, foam * 0.6);
   float alpha = max(1.0 - 0.92 * exp(-depth * 1.5), foam * 0.9);
   gl_FragColor = vec4(col, alpha);
   #include <tonemapping_fragment>
@@ -815,12 +893,13 @@ function makeNoise() {
   const tex = (data) => {
     const t = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
     t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
-    t.generateMipmaps = true; t.needsUpdate = true;
+    t.generateMipmaps = true; t.anisotropy = 8; t.needsUpdate = true;   // sharp at a slant, so the ground ahead is not a smear
     return t;
   };
   return [tex(a8), tex(b8)];
 }
 
+const _sx = new THREE.Vector3(), _sy = new THREE.Vector3(), _sf = new THREE.Vector3();
 export class Sky {
   constructor(scene, renderer) {
     this.scene = scene; this.renderer = renderer;
@@ -906,8 +985,14 @@ export class Sky {
     this.u.uMisc.value.w = this.time;
     this.u.uScale.value = this.renderer.getDrawingBufferSize(this._size).y / 720;
     // Keep the shadow box centered on the player. The dome and stars follow the camera by themselves.
-    this.sun.target.position.copy(focus);
-    this.sun.position.copy(focus).addScaledVector(this.sunDir, 130);
+    // The shadow box moves only in whole shadow-map pixels, seen from the sun, so shadow edges stay put while
+    // the player walks instead of crawling.
+    const sc = this.sun.shadow.camera, texel = (sc.right - sc.left) / this.sun.shadow.mapSize.x, z = this.sunDir;
+    _sx.set(0, 1, 0).cross(z); if (_sx.lengthSq() < 1e-6) _sx.set(1, 0, 0); _sx.normalize(); _sy.copy(z).cross(_sx);
+    const a = Math.round(focus.dot(_sx) / texel) * texel, b = Math.round(focus.dot(_sy) / texel) * texel, c = focus.dot(z);
+    _sf.copy(_sx).multiplyScalar(a).addScaledVector(_sy, b).addScaledVector(z, c);
+    this.sun.target.position.copy(_sf);
+    this.sun.position.copy(_sf).addScaledVector(this.sunDir, 130);
     if (sea) { sea.mat.color.copy(this.cur.sea); if (sea.link && sea.sky !== this) sea.link(this); }
   }
   apply() {

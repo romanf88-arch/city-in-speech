@@ -1,4 +1,5 @@
 // Where everything stands: the harbor town, the road north, the cave hill, and the valley in Lydia.
+import { dressTown } from './props.js';
 import * as THREE from 'three';
 import { mulberry32, noise2, nearestOnPath } from './util.js';
 import { ROAD_N, ROAD_E, PATH_CAVE, PLACES, FIELDS } from './world.js';
@@ -22,6 +23,8 @@ export function buildLayout(game) {
   // ---- quay and piers
   w.block(0, -1.0, 56.7, 186, 5.2, 3.2, 0xa89f91);
   w.addFloor(0, 56.7, 93, 1.6, 0, 1.6, 0.5);
+  // The wet band where the harbor water meets the quay front and the two piers (world.js, Sea.wetBand).
+  if (game.sea && game.sea.wetBand) game.sea.wetBand(game.world.group, [[-93, 58.3, -63.5, 58.3, 0, 1], [-56.5, 58.3, 56.5, 58.3, 0, 1], [63.5, 58.3, 93, 58.3, 0, 1], ...[-60, 60].flatMap((px) => [[px - 3.5, 58.3, px - 3.5, 97.5, -1, 0], [px + 3.5, 58.3, px + 3.5, 97.5, 1, 0], [px - 3.5, 97.5, px + 3.5, 97.5, 0, 1]])]);
   for (const sx of [-60, 60]) {
     w.block(sx, -1.1, 77.5, 7, 5.4, 40, 0x9c9384); w.addFloor(sx, 77.5, 3.5, 20, 0, 1.6, 0.4);
     for (let z = 62; z < 97; z += 9) { P('bollard', sx - 2.9, z, 0, { y: 1.6 }); P('bollard', sx + 2.9, z, 0, { y: 1.6 }); }
@@ -34,7 +37,7 @@ export function buildLayout(game) {
     o.add(rock); sites.afloat.push({ o, rock, y, k: amount, ph: x * 0.37 + z * 0.11 });
   };
   afloat('ship_merchant', -67.3, 80, 0, 0.15, false, 1); afloat('ship_trireme', 67, 77.5, 0, 0.1, false, 0.7);
-  afloat('ship_merchant', 14, 132, 0.5, 0.15, true, 1.4); afloat('boat_small', 22, 60.3, E, 0.1, true, 2.2); afloat('boat_small', -30, 60.5, Wd, 0.1, true, 2.2);
+  afloat('ship_merchant', 14, 132, 0.5, 0.15, true, 1.4); afloat('boat_small', 22, 61.4, E, 0.1, true, 2.2); afloat('boat_small', -30, 61.6, Wd, 0.1, true, 2.2);   // 2 m clear of the quay front (58.3): nearer, the high quay edge hid half the hull and the boat looked jammed under it
   game.tickers.push(() => {
     const t = game.time;
     for (const b of sites.afloat) {
@@ -50,19 +53,20 @@ export function buildLayout(game) {
     ['amphora', 33, 47.5, 0], ['amphora', -38.6, 46.4, 0], ['amphora', 12, 52, 0], ['sacks', 70, 42, 1.0], ['amphora_group', -66, 50.5, 0.4], ['crate_stack', 64, 52, 0.2]].forEach(([id, x, z, r]) => P(id, x, z, r));
 
   // ---- buildings
+  const houses = [];   // for the things set out by their doors (props.js)
   [['warehouse', -72, 30, S], ['warehouse', -50, 30, S], ['house_b', -28, 30.5, S], ['house_a', -16, 31, S], ['house_a', 15.5, 31, S], ['house_b', 27.5, 30.5, S], ['warehouse', 50, 30, S], ['warehouse', 72, 30, S],
     ['house_a', -48, -15, Wd], ['house_b', -50, 3, Wd], ['house_c', -74, -8, E], ['house_a', -92, 6, E], ['house_a', -80, 9.5, S], ['house_b', -93, -18, E],
     ['house_b', 40, 8.5, S], ['house_a', 57, 6.5, S], ['house_c', 80, 2, Wd], ['house_a', 95, 8, Wd], ['house_b', 78, -22, Wd], ['house_a', 94, -30, Wd],
     ['house_c', -21, -33, N], ['house_a', -17, -57, S], ['house_b', -29, -60, S], ['house_a', -76, -36, E], ['house_b', -77, -58, E], ['house_c', -88, -68, S], ['house_a', -50, -68, S], ['house_a', -36, -71, S], ['house_a', -93, -52, E],
     ['house_b', 18, -34, N], ['house_a', 31, -35.5, N], ['house_c', 23, -58, S], ['house_a', 44, -36, N], ['house_b', 72, -36, Wd], ['house_a', 71, -57, Wd], ['house_c', 86, -64, S], ['house_a', 42, -66, S], ['house_a', 52, -60, S], ['house_b', 92, -45.5, N]]
-    .forEach(([id, x, z, r]) => P(id, x, z, r));
-  sites.cephalus = P('courtyard_house', -50, -46, E);
+    .forEach(([id, x, z, r]) => houses.push([id, P(id, x, z, r)]));
+  sites.cephalus = P('courtyard_house', -50, -46, E); houses.push(['courtyard_house', sites.cephalus]);
   sites.stoa = P('stoa', -33.5, -4, E);
   sites.shrine = P('shrine', 45, -6, Wd);
   sites.statue = P('statue_goddess', 31.5, -6, Wd);
   sites.bema = P('bema', 9, -13, S);
   sites.bookstall = P('bookstall', 21.5, 3.5, Wd);
-  sites.stallA = P('stall_a', -15, 10.4, N); sites.stallB = P('stall_b', -8.5, 10.8, N); sites.stallC = P('stall_c', 14, 10.4, N); P('stall_a', 23, -16, Wd);
+  sites.stallA = P('stall_a', -15, 10.4, N); sites.stallB = P('stall_b', -8.5, 10.8, N); sites.stallC = P('stall_c', 14, 10.4, N); const stallD = P('stall_a', 23, -16, Wd);
   sites.well = P('well', -15, -12, 0.3);
   P('herm', -25, 12.6, S); P('herm', 25, 12.6, S); P('herm', 4.8, -21.4, S); P('herm', -4.6, -21.4, S); P('herm', -5, -106, 0.4, { zone: 'north' });
   P('bench', -24, -19.5, 0); P('bench', 20, -20, 0); P('bench', 36, 0.5, E); P('altar', 36.2, -6, Wd); P('table_low', -31.5, -8, E); P('couch', -32.5, -11.5, 0); P('stool', -30.2, -6.6, 0);
@@ -149,6 +153,7 @@ export function buildLayout(game) {
   }
   for (let i = 0; i < 220; i++) { const a = rng() * PI * 2, r = rng() * 48, x = lyd[0] + Math.sin(a) * r, z = lyd[1] + Math.cos(a) * r; P('grass_tuft', x, z, rng() * 6.28, { zone: 'lydia', scale: 1 + rng() * 1.4, noCollide: true }); }
 
+  dressTown(kit, w, houses, [sites.stallA, sites.stallB, sites.stallC, stallD]);   // doorways and market (props.js)
   kit.build();
   // Flames get a glow and a share of the night lights.
   for (const f of sites.flames) { const a = f.anchor('flame'); game.addFlame(a.x, f.id === 'brazier' ? f.y + 1.2 : f.y + 2.5, a.z, f.id === 'brazier' ? { power: 34 } : { power: 22, base: f.y + 2.3, smoke: 0.6 }); }

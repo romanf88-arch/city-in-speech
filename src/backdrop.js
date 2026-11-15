@@ -69,7 +69,7 @@ void main() {
   // Haze, mixed after tone mapping exactly as three.js mixes scene fog.
   vec3 V = vW - cameraPosition;
   float hz = hazeAmount(length(V), vZ, cameraPosition.y, vW.y, 0.9, vNear);
-  vec3 hc = mix(hazeColor(V), linearToOutputTexel(vec4(uFog, 1.0)).rgb, vNear);
+  vec3 hc = mix(hazeColor(V), lookOut(uFog), vNear);
   gl_FragColor.rgb = mix(gl_FragColor.rgb, hc, hz);
 }`;
 

@@ -109,8 +109,9 @@ export function makeVignette(name, seed = 1, opts = {}) {
   fn(c, v);
   if (P.tris) { v.props = new THREE.Mesh(P.geometry(false), propMaterial); v.props.castShadow = true; v.props.receiveShadow = true; v.group.add(v.props); }
   if (Gl.tris) { v.glow = new THREE.Mesh(Gl.geometry(false), glowMat.clone()); v.group.add(v.glow); c.tick((dt, t) => v.glow.material.color.setScalar(0.82 + 0.12 * Math.sin(t * 11 + seed) + 0.06 * Math.sin(t * 23))); }
-  v.update = (dt) => { v.t += dt; for (const f of v.ticks) f(dt, v.t); for (const p of v.people) p.actor.update(dt); for (const a of v.animals) a.update(dt); };
-  for (let i = 0; i < 24; i++) v.update(0.05);      // start already settled into the work
+  // now: pose the people at once instead of queueing them for the next drawn frame (see poseQueued in actors.js)
+  v.update = (dt, now) => { v.t += dt; for (const f of v.ticks) f(dt, v.t); for (const p of v.people) { if (now) p.actor.update(dt); else p.actor.queue(dt); } for (const a of v.animals) a.update(dt); };
+  for (let i = 0; i < 24; i++) v.update(0.05, true);      // start already settled into the work
   return v;
 }
 

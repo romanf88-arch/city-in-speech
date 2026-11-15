@@ -4,7 +4,10 @@ import * as THREE from 'three';
 import { clamp, lerp, smooth, noise2, mulberry32 } from './util.js';
 import { World } from './world.js';
 import { Actor } from './actors.js';
+import { makeRock, noise3 } from './rocks.js';
 
+// The made rocks are pale limestone; in the cave they take the darker brown of its stone.
+const CAVE_STONE = [0.31, 0.24, 0.2];
 export const CAVE = { y: -300, wallZ: -9, seatZ: -1.5, parapetZ: 4.5, roadZ: 6.2, fire: [0, 4.2, 11.8], tunnelStart: 14, mouthZ: 56, statueY: 4.25 };
 const FLOOR_PATH = [[14, 0], [20, 1.6], [28, 4.6], [38, 8.6], [46, 11.5], [52, 12.8], [58, 13.0]];
 // The tunnel leaves the chamber to one side of the fire ledge and bends back toward the middle as it climbs.
@@ -22,6 +25,14 @@ const SHAPES = {
   man: [[-0.08, -0.45], [-0.02, -0.1], [0.02, -0.1], [0.08, -0.45], [0.16, -0.45], [0.12, 0.2], [0.3, 0.02], [0.34, 0.1], [0.14, 0.34], [0.07, 0.36], [0.1, 0.5], [-0.1, 0.5], [-0.07, 0.36], [-0.14, 0.34], [-0.34, 0.1], [-0.3, 0.02], [-0.12, 0.2], [-0.16, -0.45]],
   bird: [[-0.45, 0.05], [-0.2, 0.12], [-0.05, 0.4], [0.05, 0.14], [0.3, 0.2], [0.45, 0.12], [0.3, 0.04], [0.1, -0.02], [0.0, -0.2], [-0.12, -0.02], [-0.3, -0.06]],
 };
+
+// Join several geometries made in code (position and color only).
+function mergeAll(list) {
+  let n = 0; for (const g of list) n += g.attributes.position.count;
+  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3); let o = 0;
+  for (const g of list) { pos.set(g.attributes.position.array, o * 3); col.set(g.attributes.color.array, o * 3); o += g.attributes.position.count; }
+  const out = new THREE.BufferGeometry(); out.setAttribute('position', new THREE.BufferAttribute(pos, 3)); out.setAttribute('color', new THREE.BufferAttribute(col, 3)); return out;
+}
 
 export class Cave {
   constructor(game) {
@@ -64,14 +75,54 @@ export class Cave {
     return geo;
   }
 
+  // The chamber as rock: a finely divided shell pushed in and out by noise at three sizes (bays, bulges, knobs),
+  // with faint horizontal layers, turned to face inward, colored darker in its hollows, and dressed as cave rock.
+  caveDome(S) {
+    const N = noise3(4711), f = (x, y, z) => N(x, y, z) * 0.55 + N(x * 2.03 + 7, y * 2.03, z * 2.03) * 0.3 + N(x * 4.1, y * 4.1 + 3, z * 4.1) * 0.15;
+    let g = new THREE.SphereGeometry(1, 120, 64); g.scale(14.6, 11.5, 15.2); g.translate(0, 0.2, 3);
+    g = g.toNonIndexed();
+    const P = g.attributes.position.array, n = P.length / 3, dent = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2], dx = x / 14.6, dy = (y - 0.2) / 11.5, dz = (z - 3) / 15.2, l = Math.hypot(dx, dy, dz) || 1;
+      let d = (f(x * 0.09 + 3, y * 0.09, z * 0.09) - 0.5) * 3.2 + (f(x * 0.3, y * 0.3 + 5, z * 0.3) - 0.5) * 1.5 + (f(x * 1.1 + 9, y * 1.1, z * 1.1) - 0.5) * 0.45;
+      d += Math.sin(y * 1.7 + f(x * 0.2, y * 0.2, z * 0.2) * 4) * 0.12;
+      if (y < 2.5) d = Math.max(d, -0.5 * (y < 0 ? 0 : y / 2.5));   // near the floor the rock may not bulge into where people walk
+      dent[i] = d;
+      P[i * 3] += dx / l * d * 14.6 / 13; P[i * 3 + 1] += dy / l * d * 11.5 / 13; P[i * 3 + 2] += dz / l * d * 15.2 / 13;
+    }
+    // drop the triangles where the tunnel leaves and those below the floor, and turn the rest to face inward
+    const keep = [], kd = [];
+    for (let i = 0; i < n; i += 3) {
+      const cx = (P[i * 3] + P[i * 3 + 3] + P[i * 3 + 6]) / 3, cy = (P[i * 3 + 1] + P[i * 3 + 4] + P[i * 3 + 7]) / 3, cz = (P[i * 3 + 2] + P[i * 3 + 5] + P[i * 3 + 8]) / 3;
+      if (cz > 12.0 && Math.abs(cx - 7.4) < 4.4 && cy < 7.0 && cy > -1.5) continue;   // a wider opening than the old dome's: the rough rock reaches further in, and the tunnel's flared start covers the edge
+      if (cy < -1.2) continue;
+      for (const k of [0, 2, 1]) { keep.push(P[(i + k) * 3], P[(i + k) * 3 + 1], P[(i + k) * 3 + 2]); kd.push(dent[i + k]); }
+    }
+    const out = new THREE.BufferGeometry(), m = keep.length / 3, col = new Float32Array(m * 3), base = new THREE.Color(0x6f5d4c);
+    out.setAttribute('position', new THREE.Float32BufferAttribute(keep, 3));
+    for (let i = 0; i < m; i++) {
+      const x = keep[i * 3], y = keep[i * 3 + 1], z = keep[i * 3 + 2];
+      // hollows (pushed outward, away from the light) darker; soot over the fire; smooth patches of tone
+      const hollow = Math.min(1, Math.max(0, kd[i] / 1.4)), soot = Math.exp(-((x * x) / 30 + ((z - CAVE.fire[2]) ** 2) / 26)) * Math.min(1, Math.max(0, (y - 5) / 4));
+      const k = (0.8 + 0.4 * f(x * 0.15 + 20, y * 0.15, z * 0.15)) * (1 - 0.45 * hollow) * (1 - 0.6 * soot);
+      col[i * 3] = base.r * k; col[i * 3 + 1] = base.g * k; col[i * 3 + 2] = base.b * k;
+    }
+    out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return S.prepareAs(out, 'cave_dome', 'caverock');
+  }
+
   build() {
     // chamber dome, with a gap where the tunnel leaves it
+    const S = this.g.surface;   // the shared stone surface (surfaces.js): with it the cave is real rock, without it the old faceted dome
+    if (S) this.mesh(this.caveDome(S), S.material, false, true);
+    else {
     let dome = new THREE.SphereGeometry(1, 18, 11); dome.scale(14.6, 11.5, 15.2); dome.translate(0, 0.2, 3);
     this.rough(dome, 1.3, 0.22); dome = dome.toNonIndexed();
     { const p = dome.attributes.position.array, keep = [];
       for (let i = 0; i < p.length; i += 9) { const cx = (p[i] + p[i + 3] + p[i + 6]) / 3, cy = (p[i + 1] + p[i + 4] + p[i + 7]) / 3, cz = (p[i + 2] + p[i + 5] + p[i + 8]) / 3; if (cz > 12.4 && Math.abs(cx - 7.4) < 3.3 && cy < 5.4 && cy > -1.5) continue; for (let k = 0; k < 9; k++) keep.push(p[i + k]); }
       dome = new THREE.BufferGeometry(); dome.setAttribute('position', new THREE.Float32BufferAttribute(keep, 3)); }
     this.mesh(this.tint(dome, 0x6f5d4c), this.rock, false, true);
+    }
     // floor
     const floor = new THREE.PlaneGeometry(34, 34, 24, 24); floor.rotateX(-Math.PI / 2); floor.translate(0, 0, 3);
     { const p = floor.attributes.position; for (let i = 0; i < p.count; i++) p.setY(i, (noise2(p.getX(i) * 0.5, p.getZ(i) * 0.5) - 0.5) * 0.12); }
@@ -83,15 +134,25 @@ export class Cave {
     // the raised road and the low wall in front of it
     const road = new THREE.BoxGeometry(23, 0.4, 2.6); road.translate(0, 0.2, CAVE.roadZ);
     this.mesh(this.tint(road, 0x514438), this.solid, false, true);
-    for (let i = 0; i < 15; i++) {
+    if (S) {
+      // A low wall of rough fitted stones, two courses high, with no gaps, so its top reads against the firelight.
+      const parts = [];
+      for (let i = 0; i < 11; i++) { const g = makeRock(900 + i, [1.9, 0.95, 0.7], 4, CAVE_STONE); g.rotateY((this.rng() - 0.5) * 0.12); g.translate(-7.0 + i * 1.4, 0, CAVE.parapetZ + (this.rng() - 0.5) * 0.06); parts.push(g); }
+      for (let i = 0; i < 10; i++) { const g = makeRock(950 + i, [1.85, 0.62, 0.62], 4, CAVE_STONE); g.rotateY((this.rng() - 0.5) * 0.12); g.translate(-6.3 + i * 1.4 + (this.rng() - 0.5) * 0.2, 0.86, CAVE.parapetZ + (this.rng() - 0.5) * 0.06); parts.push(g); }
+      this.mesh(S.prepareAs(mergeAll(parts), 'cave_wall', 'caverock'), S.material, true, true);
+      const seats = [];
+      for (let i = 0; i < 7; i++) { const st = this.seat(i), g = makeRock(980 + i, [0.8, 0.12, 0.62], 4, CAVE_STONE); g.rotateY((this.rng() - 0.5) * 0.4); g.translate(st.x, 0, st.z - 0.08); seats.push(g); }
+      this.mesh(S.prepareAs(mergeAll(seats), 'cave_seats', 'caverock'), S.material, false, true);
+    } else for (let i = 0; i < 15; i++) {
       const w = 0.95 + this.rng() * 0.2, h = 1.42 + this.rng() * 0.12, b = new THREE.BoxGeometry(w, h, 0.6 + this.rng() * 0.12);
       b.rotateY((this.rng() - 0.5) * 0.08); b.translate(-7.3 + i * 1.04, h / 2, CAVE.parapetZ + (this.rng() - 0.5) * 0.08);
       this.mesh(this.tint(b, 0x6a5c50), this.solid, true, true);
     }
     this.col.addBox(0, CAVE.parapetZ, 7.9, 0.42, 0, 1.5);
     // the fire, on a ledge above and behind
-    const ledge = new THREE.CylinderGeometry(2.6, 3.6, 3.4, 9); ledge.translate(0, 1.7, CAVE.fire[2] + 0.2); this.rough(ledge, 0.5, 0.6);
-    this.mesh(this.tint(ledge, 0x5d5046), this.solid, false, true);
+    if (S) { const g = makeRock(977, [6.8, 3.45, 6.6], 6, [0.25, 0.19, 0.155]); g.translate(0, 0, CAVE.fire[2] + 0.2); this.mesh(S.prepareAs(g, 'cave_ledge', 'caverock'), S.material, false, true); }
+    else { const ledge = new THREE.CylinderGeometry(2.6, 3.6, 3.4, 9); ledge.translate(0, 1.7, CAVE.fire[2] + 0.2); this.rough(ledge, 0.5, 0.6);
+    this.mesh(this.tint(ledge, 0x5d5046), this.solid, false, true); }
     this.col.addCircle(0, CAVE.fire[2] + 0.2, 3.3, 4);
     for (let i = 0; i < 6; i++) { const l = new THREE.CylinderGeometry(0.1, 0.12, 1.4, 5); l.rotateZ(0.9); l.rotateY(i * 1.05); l.translate(Math.cos(i * 1.05) * 0.3, 3.75, CAVE.fire[2] + Math.sin(i * 1.05) * 0.3); this.mesh(this.tint(l, 0x3a2a1c), this.solid, false, false); }
     this.flames = [];
@@ -106,16 +167,26 @@ export class Cave {
     this.light = new THREE.PointLight(0xffc48a, 620, 90, 1.45); this.light.position.set(...CAVE.fire);
     this.light.castShadow = true; this.light.shadow.mapSize.set(2048, 2048); this.light.shadow.radius = 3; this.light.shadow.camera.near = 0.6; this.light.shadow.camera.far = 46; this.light.shadow.bias = -0.004;
     this.group.add(this.light);
-    // the tunnel
-    const pos = [], N = 10, zs = [];
-    for (let z = CAVE.tunnelStart - 2; z <= CAVE.mouthZ + 2; z += 2) zs.push(z);
-    const ring = (z, k) => { const a = k / N * Math.PI * 2, r = 3.5 + (noise2(z * 0.4 + k, k * 1.7) - 0.5) * 1.4 + (z < 17 ? (17 - z) * 0.75 : 0); return [tunnelX(z) + Math.cos(a) * r, tunnelFloor(z) + 2.2 + Math.sin(a) * r * 0.88, z]; };
+    // the tunnel: with the stone surface, rock like the chamber's (finely divided, uneven, facing inward)
+    const pos = [], N = S ? 40 : 10, STEP = S ? 1 : 2, zs = [], Nn = noise3(5150);
+    for (let z = CAVE.tunnelStart - 2; z <= CAVE.mouthZ + 2; z += STEP) zs.push(z);
+    const ring = (z, k) => {
+      const a = k / N * Math.PI * 2;
+      let r = 3.5 + (noise2(z * 0.4 + k * 10 / N, k * 17 / N) - 0.5) * 1.4 + (z < 17 ? (17 - z) * 0.75 : 0);   // it widens where it meets the chamber, covering the edge of the dome's opening
+      if (S) r = Math.max(2.9, r + (Nn(Math.cos(a) * 1.3 + 4, Math.sin(a) * 1.3, z * 0.3) - 0.5) * 1.2 + (Nn(Math.cos(a) * 4, Math.sin(a) * 4 + 7, z * 0.9) - 0.5) * 0.35);
+      return [tunnelX(z) + Math.cos(a) * r, tunnelFloor(z) + 2.2 + Math.sin(a) * r * 0.88, z];
+    };
     for (let i = 0; i < zs.length - 1; i++) for (let k = 0; k < N; k++) {
       const a = ring(zs[i], k), b = ring(zs[i], k + 1), c = ring(zs[i + 1], k + 1), d = ring(zs[i + 1], k);
-      pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+      if (S) pos.push(...a, ...c, ...b, ...a, ...d, ...c); else pos.push(...a, ...b, ...c, ...a, ...c, ...d);
     }
     const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    this.mesh(this.tint(tg, 0x6a594a, 0.2), new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), false, true);
+    if (S) {
+      const m = pos.length / 3, col = new Float32Array(m * 3), base = new THREE.Color(0x6a594a);
+      for (let i = 0; i < m; i++) { const k = 0.75 + 0.5 * Nn(pos[i * 3] * 0.2 + 30, pos[i * 3 + 1] * 0.2, pos[i * 3 + 2] * 0.2); col[i * 3] = base.r * k; col[i * 3 + 1] = base.g * k; col[i * 3 + 2] = base.b * k; }
+      tg.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      this.mesh(S.prepareAs(tg, 'cave_tunnel', 'caverock'), S.material, false, true);
+    } else this.mesh(this.tint(tg, 0x6a594a, 0.2), new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), false, true);
     const fp = [];
     for (let z = CAVE.tunnelStart - 1; z < CAVE.mouthZ + 1; z += 1.5) { const z2 = z + 1.5, x1 = tunnelX(z), x2 = tunnelX(z2), y1 = tunnelFloor(z) + 0.02, y2 = tunnelFloor(z2) + 0.02; fp.push(x1 - 2.6, y1, z, x1 + 2.6, y1, z, x2 + 2.6, y2, z2, x1 - 2.6, y1, z, x2 + 2.6, y2, z2, x2 - 2.6, y2, z2); }
     const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(fp, 3));

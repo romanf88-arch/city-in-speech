@@ -27,11 +27,11 @@ const BIND = {}; for (const [n, p, x, y, z] of BONES) { const q = p ? BIND[p] : 
 
 // Collects colored triangles, each corner bound to one bone.
 export class Builder {
-  constructor(seed) { this.pos = []; this.col = []; this.bone = []; this.rng = mulberry32(seed); this.c = new THREE.Color(); this.out = null; this.off = null; }
+  constructor(seed) { this.pos = []; this.col = []; this.bone = []; this.rng = mulberry32(seed); this.c = new THREE.Color(); this.out = null; this.off = null; this.tv = 0.14; }   // tv: how much each triangle's color varies
   // `bone` is one bone index, or three (one per corner). When this.out is set, the triangle is turned to face that way.
   tri(a, b, c, hex, bone, tone = 1) {
     if (this.out) { const o = this.out, ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2]; if ((uy * vz - uz * vy) * o[0] + (uz * vx - ux * vz) * o[1] + (ux * vy - uy * vx) * o[2] < 0) { const t = b; b = c; c = t; if (bone.length) bone = [bone[0], bone[2], bone[1]]; } }
-    this.c.set(hex).multiplyScalar(tone * (0.93 + 0.14 * this.rng()));
+    this.c.set(hex).multiplyScalar(tone * (1 - this.tv / 2 + this.tv * this.rng()));
     const o = this.off, pts = [a, b, c];
     for (let i = 0; i < 3; i++) { const v = pts[i]; if (o) this.pos.push(v[0] + o[0], v[1] + o[1], v[2] + o[2]); else this.pos.push(v[0], v[1], v[2]); this.col.push(this.c.r, this.c.g, this.c.b); this.bone.push(bone.length ? bone[i] : bone); }
   }
@@ -53,7 +53,8 @@ export class Builder {
   }
   // The same, but stacked along z (for animal bodies and lying things). Rings are { z, rx, ry, x, y, hex }.
   loftZ(rings, n, bone, hex, opts = {}) {
-    const pt = (r, k) => { const a = (k / n) * Math.PI * 2 + (r.tw || 0); return [(r.x || 0) + Math.sin(a) * r.rx, (r.y || 0) - Math.cos(a) * r.ry, r.z]; };
+    // r.sq above 2 squares the ring off (a superellipse): flatter sides and a broader back, as a ribcage is.
+    const pt = (r, k) => { const a = (k / n) * Math.PI * 2 + (r.tw || 0); let sn = Math.sin(a), cs = Math.cos(a); if (r.sq) { const e = 2 / r.sq; sn = Math.sign(sn) * Math.abs(sn) ** e; cs = Math.sign(cs) * Math.abs(cs) ** e; } return [(r.x || 0) + sn * r.rx, (r.y || 0) - cs * r.ry, r.z]; };
     for (let i = 0; i < rings.length - 1; i++) {
       const lo = rings[i], hi = rings[i + 1];
       for (let k = 0; k < n; k++) { if (opts.skip && opts.skip(i, k)) continue; this.quad(pt(lo, k), pt(lo, k + 1), pt(hi, k + 1), pt(hi, k), lo.hex || hex, bone, opts.tone ? opts.tone(i, k) : 1); }
@@ -128,7 +129,9 @@ function fullSpec(spec) {
 // Hats of the low-polygon figure. A smooth person wears these too (wreaths excepted, which a kit has).
 function addHat(b, s, hy, over) {
   const B = BI;
-  if (s.hat === 'petasos') { b.loft([{ y: hy + 0.075, rx: 0.2, rz: 0.2 }, { y: hy + 0.105, rx: 0.085, rz: 0.085 }, { y: hy + 0.15, rx: 0.05, rz: 0.05 }], 8, B.head, s.hatColor || 0x9a8a68); }
+  // The petasos, a traveller's sun hat: a wide brim that droops a little at the edge and a low rounded crown.
+  // Twenty sides; with eight it read as an octagon.
+  if (s.hat === 'petasos') { b.loft([{ y: hy + 0.064, rx: 0.205, rz: 0.205 }, { y: hy + 0.079, rx: 0.165, rz: 0.165 }, { y: hy + 0.094, rx: 0.115, rz: 0.115 }, { y: hy + 0.104, rx: 0.09, rz: 0.09 }, { y: hy + 0.13, rx: 0.083, rz: 0.083 }, { y: hy + 0.15, rx: 0.062, rz: 0.062 }, { y: hy + 0.161, rx: 0.03, rz: 0.03 }], 20, B.head, s.hatColor || 0x9a8a68); }
   if (s.hat === 'pilos') { b.loft([{ y: hy + 0.055, rx: 0.114, rz: 0.124, z: -0.004 }, { y: hy + 0.12, rx: 0.09, rz: 0.096, z: -0.006 }, { y: hy + 0.2, rx: 0.03, rz: 0.03, z: -0.008 }], 8, B.head, s.hatColor || 0xc9b892, { capLo: false }); }
   if (s.hat === 'wreath' || s.hat === 'goldWreath') { const hx = s.hat === 'wreath' ? 0x5f7a3a : 0xd9a93c; b.loft([{ y: hy + 0.062, rx: 0.115, rz: 0.125, z: -0.004 }, { y: hy + 0.095, rx: 0.112, rz: 0.122, z: -0.004 }], 10, B.head, hx, { capLo: false, capHi: false }); }
   if (s.hat === 'crown') { b.loft([{ y: hy + 0.07, rx: 0.108, rz: 0.118 }, { y: hy + 0.16, rx: 0.12, rz: 0.13 }], 8, B.head, 0xd9a93c, { capLo: false, capHi: false }); b.ball(0, hy + 0.05, -0.004, 0.1, 0.1, 0.11, 0x8a2f2a, B.head, (x, y) => y > 0.5); }
@@ -504,17 +507,23 @@ function makeModelMaterial(colors) {
       .replace('#include <color_fragment>', `#include <color_fragment>
         // aux.x: the slot. aux.y: meters from a cloth edge that carries a border.
         int slot = int( floor( vAux.x + 0.5 ) );
+        // How much the distance from the cloth edge changes across one pixel (worked out here, outside any branch,
+        // because the chip can only measure it where all four pixels of a 2 by 2 block run the same code).
+        float edgeFw = max( fwidth( vAux.y ), 1e-4 );
         gWrap = slot == 0 ? 0.32 : ( slot == 1 || slot == 2 ) ? 0.2 : slot == 4 ? 0.5 : 0.15;
         vec3 tintOnly = diffuseColor.rgb;
         diffuseColor.rgb *= uCol[ slot ];
         if ( slot == 1 || slot == 2 ) {
-          float e = vAux.y;
-          float band = 1.0 - smoothstep( 0.021, 0.0225, e );
-          float line = smoothstep( 0.0285, 0.03, e ) * ( 1.0 - smoothstep( 0.034, 0.0355, e ) );
+          // The border: a band 22 mm wide at the edge and a line 5.5 mm wide beside it. Each is drawn as the share
+          // of the pixel it covers, so a line thinner than a pixel shows as a faint stripe instead of blinking on and
+          // off as the cloth or the camera moves.
+          float e = vAux.y, fw = edgeFw;
+          float band = clamp( ( 0.02175 - e ) / fw + 0.5, 0.0, 1.0 );
+          float line = clamp( ( min( e + 0.5 * fw, 0.03475 ) - max( e - 0.5 * fw, 0.02925 ) ) / fw, 0.0, 1.0 );
           diffuseColor.rgb = mix( diffuseColor.rgb, uCol[ 7 ] * tintOnly, max( band, line ) );
         }`);
   };
-  m.customProgramCacheKey = () => 'people-model-2';
+  m.customProgramCacheKey = () => 'people-model-3';
   return m;
 }
 function setSlotColors(m, colors) { const cols = m.userData.cols; for (const k in SLOTS) if (k !== 'fixed') cols[SLOTS[k]].set(colors[k] != null ? colors[k] : 0xffffff); }
@@ -616,7 +625,29 @@ export async function loadPeople(names = ['mika', 'man', 'woman', 'socrates', 'c
   return MODELS;
 }
 
+// Posing a person (Actor.update) is the costly part of the game's step: about 75 microseconds each on Intel UHD 620,
+// and it ran for every person within 60 m at every step, two steps a drawn frame (9 ms a frame in the market,
+// measured 2026-11-15). Now people queue the time that has passed (queue) and the game poses the queue once per
+// drawn frame (poseQueued): near people every frame, farther ones and those behind the camera less often. Their
+// place on the ground still moves at every step.
+const QUEUED = new Set(), _cf = new THREE.Vector3();
+export function poseQueued(camera) {
+  if (!QUEUED.size) return;
+  camera.getWorldDirection(_cf);
+  const fl = Math.hypot(_cf.x, _cf.z) || 1, fx = _cf.x / fl, fz = _cf.z / fl, cx = camera.position.x, cz = camera.position.z;
+  for (const a of QUEUED) {
+    const m = a.group.matrixWorld.elements, dx = m[12] - cx, dz = m[14] - cz, d = Math.hypot(dx, dz);
+    const ahead = d < 6 || (dx * fx + dz * fz) / d > 0.35;
+    // seconds a pose may wait: 0 every frame; 0.03 every frame at 30 a second, every other at 60; 0.065 about 15 times
+    // a second; 0.095 about 10 times a second
+    const wait = d < 15 ? 0 : !ahead ? 0.095 : d < 35 ? 0.03 : 0.065;
+    if (a.pend >= wait) { const t = a.pend, q = a.pendQ; a.pend = 0; QUEUED.delete(a); a.update(t, q); }
+  }
+}
+
 export class Actor {
+  // Let time pass for this person without posing it yet (see poseQueued). The place is updated at once.
+  queue(dt, quality = 1) { this.pend = Math.min((this.pend || 0) + dt, 0.25); this.pendQ = quality; QUEUED.add(this); this.sync(); }
   constructor(spec = {}, seed = 1) {
     this.spec = spec; this.seed = seed;
     this.group = new THREE.Group();
@@ -748,9 +779,20 @@ export class Actor {
     const P = POSES[(this.actOn && this.actPose) || this.pose] || POSES.stand, base = POSES.stand, k = 9;
     const moving = clamp(this.speed / 1.6, 0, 1), short = shortDress(this.spec);
     this.walk = damp(this.walk, moving, 10, dt);
-    this.phase += this.speed * dt * (short ? 4.0 : 4.6) / Math.max(0.6, this.h * this.legS);
-    const wk = this.walk, ph = this.phase;
-    const A = (short ? 0.5 : 0.3) * wk, s = Math.sin(ph);
+    // The gait. Steps a second rise with speed, and so does the stride. A long robe limits how far the leg can
+    // swing, so past that the steps come faster instead of longer, which keeps the feet planted. Above about
+    // 4 m/s the walk turns into a run: the weight is off the ground part of each stride, the knees lift, the
+    // body leans in, and the elbows bend.
+    const v = Math.max(0, this.speed), Ls = Math.max(0.6, this.h * this.legS);
+    const runT = clamp((v - 3.8) / 1.6, 0, 1), runK = runT * runT * (3 - 2 * runT), stance = 1 - 0.45 * runK;
+    const maxA = short ? 0.72 : 0.42, legL = 0.88 * Ls, reachMax = 2 * legL * Math.sin(maxA) / stance;
+    const cad = Math.max((1.8 - 1.15 * Math.exp(-v / 2.6)) / Math.sqrt(Ls), v / (2 * reachMax));      // strides a second
+    const stepLen = v / (2 * cad);
+    const aWant = Math.asin(clamp(stepLen * stance / (2 * legL), 0, Math.sin(maxA)));
+    this.gaitA = damp(this.gaitA || 0, aWant, 8, dt); this.runK = damp(this.runK || 0, runK, 5, dt);
+    this.phase += 2 * Math.PI * cad * dt * clamp(v / 0.3, 0, 1);
+    const wk = this.walk, ph = this.phase, rk = this.runK * wk;
+    const A = this.gaitA * wk, s = Math.sin(ph);
     this.talking = damp(this.talking, this.speaking ? 1 : 0, 6, dt);
     if (this.speaking) this.talkT += dt;
     const tk = this.talking * this.gesture, tt = this.talkT;
@@ -790,18 +832,12 @@ export class Actor {
       const p = P[name] || base[name] || ZERO;
       let x = p[0], y = p[1], z = p[2];
       switch (name) {
-        case 'thighL': x += -s * A; break;
-        case 'thighR': x += s * A; break;
-        case 'shinL': x += Math.max(0, Math.sin(ph - 0.6)) * A * 1.5; break;
-        case 'shinR': x += Math.max(0, -Math.sin(ph - 0.6)) * A * 1.5; break;
+        // (The stride itself is added after the smoothing below, so that it keeps its full swing at any pace.)
         // A model's arms hang a little farther out, clear of its draped cloth, unless the pose lifts them.
-        case 'armL': x += s * 0.38 * wk; z += armX * (1 - clamp(Math.abs(p[0]) / 1.4, 0, 1)); break;
-        case 'armR': x += -s * 0.38 * wk; z -= armX * (1 - clamp(Math.abs(p[0]) / 1.4, 0, 1)); break;
-        case 'foreL': case 'foreR': x += -0.12 * wk; break;
-        case 'skirtU': x += Math.sin(ph * 2) * 0.03 * wk; break;
+        case 'armL': z += armX * (1 - clamp(Math.abs(p[0]) / 1.4, 0, 1)); break;
+        case 'armR': z -= armX * (1 - clamp(Math.abs(p[0]) / 1.4, 0, 1)); break;
         case 'skirtL': x += -(0.05 + 0.07 * Math.abs(s)) * wk; break;
-        case 'spine': y += s * 0.07 * wk; x += 0.03 * wk + Math.sin(this.t * 1.3) * 0.012 + M.sx + 0.17 * st; break;
-        case 'hips': y += -s * 0.05 * wk; break;
+        case 'spine': x += 0.03 * wk + Math.sin(this.t * 1.3) * 0.012 + M.sx + 0.17 * st; break;
         case 'head': x += this.headPitch * lock + M.hx - 0.12 * st; y += this.headYaw * 0.65 * lock; z += M.hz; break;
         case 'neck': y += this.headYaw * 0.3 * lock; x += 0.12 * st; break;
       }
@@ -816,21 +852,39 @@ export class Actor {
       this.headYaw = damp(this.headYaw, yaw, 5, dt); this.headPitch = damp(this.headPitch, pitch, 5, dt);
     } else { this.headYaw = damp(this.headYaw, Math.sin(this.t * 0.31 + this.seed) * 0.25 * (1 - wk), 2, dt); this.headPitch = damp(this.headPitch, 0, 3, dt); }
     const bones = this.bones, kd = 1 - Math.exp(-k * dt);
-    for (const name of ANIM_BONES) {
-      const t = target(name), cu = this.cur[name], o = K.b[name];
-      cu[0] += (t[0] - cu[0]) * kd; cu[1] += (t[1] - cu[1]) * kd; cu[2] += (t[2] - cu[2]) * kd;
-      let x = cu[0] + o[0]; if (name === 'foreL' || name === 'foreR') x = Math.max(x, -2.45);
-      bones[name].quaternion.setFromEuler(_e.set(x, cu[1] + o[1], cu[2] + o[2], 'YXZ'));
+    // The stride, by bone (x is the bend: for legs and arms, minus swings forward; for shins, plus bends the knee).
+    // Each leg swings forward while cos(phase) > 0 for the left leg; the knee bends most early in that swing and
+    // is straight when the heel comes down, with a smaller bend under the weight (more of it when running).
+    const gw = this.gw || (this.gw = {}), legs = [['L', ph], ['R', ph + Math.PI]];
+    for (const name of ANIM_BONES) { const gv = gw[name] || (gw[name] = [0, 0, 0]); gv[0] = gv[1] = gv[2] = 0; }
+    for (const [side, q] of legs) {
+      const sq = Math.sin(q), cq = Math.cos(q);
+      gw['thigh' + side][0] = -(A * sq + 0.16 * rk);
+      const swing = Math.max(0, Math.cos(q + 0.55)), load = Math.max(0, -cq);
+      gw['shin' + side][0] = wk * (0.05 + (0.32 + (short ? 1.15 : 0.45) * rk) * (A / 0.5) * swing * swing + (0.1 + 0.3 * rk) * (A / 0.5) * load);   // in a long robe the heel kicks less, or the leg shows behind the hem
+      // The arm on this side swings back as this leg comes forward.
+      gw['arm' + (side === 'L' ? 'L' : 'R')][0] = (0.55 + 0.35 * rk) * A * sq;
+      gw['fore' + side][0] = -(0.12 * wk + 1.0 * rk);
     }
-    this.lift = damp(this.lift, (P.lift || 0) + Math.abs(s) * 0.028 * wk, 9, dt);
+    gw.skirtU[0] = Math.sin(ph * 2) * 0.03 * wk;
+    gw.spine[0] = 0.14 * rk; gw.spine[1] = s * (0.07 + 0.05 * rk) * wk;
+    gw.hips[1] = -s * 0.06 * wk;
+    for (const name of ANIM_BONES) {
+      const t = target(name), cu = this.cur[name], o = K.b[name], gv = gw[name];
+      cu[0] += (t[0] - cu[0]) * kd; cu[1] += (t[1] - cu[1]) * kd; cu[2] += (t[2] - cu[2]) * kd;
+      let x = cu[0] + o[0] + gv[0]; if (name === 'foreL' || name === 'foreR') x = Math.max(x, -2.45);
+      bones[name].quaternion.setFromEuler(_e.set(x, cu[1] + o[1] + gv[1], cu[2] + o[2] + gv[2], 'YXZ'));
+    }
+    this.lift = damp(this.lift, P.lift || 0, 9, dt);
+    const bob = (1 - this.runK) * (1 - Math.abs(s)) * 0.022 * (A / 0.5) + this.runK * Math.abs(s) * 0.05;
     this.rootX = damp(this.rootX, P.rootX || 0, 6, dt);
-    let lift = this.lift + this.lift0 + K.lift;
+    let lift = this.lift + this.lift0 + K.lift + bob * wk;
     if (this.model && !P.feet && Math.abs(this.rootX) < 0.2) {
       // A kit's ankle is higher above its sole than the low-polygon figure's. In poses that bend the legs by angle
       // (sitting, kneeling) work out where the lower ankle ends up and raise the figure until that sole is on the ground.
       const c = this.cur, kb = K.b, hx = c.hips[0] + kb.hips[0], hipY = lift + 0.93 + D.hipY;
       let low = 9;
-      for (const s of ['L', 'R']) { const a1 = hx + c['thigh' + s][0] + kb['thigh' + s][0], a2 = a1 + c['shin' + s][0] + kb['shin' + s][0]; low = Math.min(low, hipY - D.thigh * Math.cos(a1) - D.shin * Math.cos(a2)); }
+      for (const s of ['L', 'R']) { const a1 = hx + c['thigh' + s][0] + kb['thigh' + s][0] + gw['thigh' + s][0], a2 = a1 + c['shin' + s][0] + kb['shin' + s][0] + gw['shin' + s][0]; low = Math.min(low, hipY - D.thigh * Math.cos(a1) - D.shin * Math.cos(a2)); }
       const need = D.ankle + 0.04 - low; if (need > 0) lift += Math.min(need, 0.08);
     }
     bones.root.position.y = lift;
@@ -945,16 +999,22 @@ function coloredBox(sx, sy, sz, hex) {
   for (let i = 0; i < n; i++) { c[i * 3] = col.r; c[i * 3 + 1] = col.g; c[i * 3 + 2] = col.b; }
   g.setAttribute('color', new THREE.BufferAttribute(c, 3)); return g;
 }
+// A round rod (staffs, spears, poles), slightly thinner at the top, with seven sides: square ones read as planks.
+function coloredRod(r, h, hex) {
+  const g = new THREE.CylinderGeometry(r * 0.8, r, h, 7).toNonIndexed(), n = g.attributes.position.count, c = new Float32Array(n * 3), col = new THREE.Color(hex);
+  for (let i = 0; i < n; i++) { c[i * 3] = col.r; c[i * 3 + 1] = col.g; c[i * 3 + 2] = col.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(c, 3)); return g;
+}
 export function makeProp(kind) {
   const g = new THREE.Group();
   const add = (geo, x, y, z) => { const m = new THREE.Mesh(geo, propMat); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
-  if (kind === 'staff') add(coloredBox(0.035, 1.7, 0.035, 0x5a4634), 0, 0.55, 0.03);
-  else if (kind === 'crook') { add(coloredBox(0.035, 1.6, 0.035, 0x6b4a32), 0, 0.5, 0.03); add(coloredBox(0.16, 0.035, 0.035, 0x6b4a32), 0.07, 1.3, 0.03); }
-  else if (kind === 'spear') { add(coloredBox(0.03, 2.3, 0.03, 0x5a4634), 0, 0.8, 0.03); add(coloredBox(0.06, 0.24, 0.02, 0xa8a8a0), 0, 2.05, 0.03); }
+  if (kind === 'staff') add(coloredRod(0.019, 1.7, 0x5a4634), 0, 0.55, 0.03);
+  else if (kind === 'crook') { add(coloredRod(0.019, 1.6, 0x6b4a32), 0, 0.5, 0.03); add(coloredBox(0.16, 0.035, 0.035, 0x6b4a32), 0.07, 1.3, 0.03); }
+  else if (kind === 'spear') { add(coloredRod(0.016, 2.3, 0x5a4634), 0, 0.8, 0.03); add(coloredBox(0.06, 0.24, 0.02, 0xa8a8a0), 0, 2.05, 0.03); }
   else if (kind === 'scroll') add(coloredBox(0.05, 0.05, 0.26, 0xe3d5a8), 0, -0.02, 0.06);
   else if (kind === 'cup') add(coloredBox(0.09, 0.06, 0.09, 0x2a2522), 0, -0.02, 0.06);
   else if (kind === 'lyre') { add(coloredBox(0.26, 0.2, 0.05, 0x8a6a42), 0, 0.05, 0.08); add(coloredBox(0.03, 0.3, 0.03, 0x6b4a32), -0.11, 0.28, 0.08); add(coloredBox(0.03, 0.3, 0.03, 0x6b4a32), 0.11, 0.28, 0.08); add(coloredBox(0.28, 0.03, 0.03, 0x6b4a32), 0, 0.42, 0.08); }
-  else if (kind === 'pole') add(coloredBox(0.03, 1.5, 0.03, 0x4a3423), 0, -0.6, 0.03);
+  else if (kind === 'pole') add(coloredRod(0.016, 1.5, 0x4a3423), 0, -0.6, 0.03);
   else if (TOOLS[kind] && !BODY_TOOLS[kind]) { const b = new Builder(7); b.off = PALM; TOOLS[kind](b, 0); const m = new THREE.Mesh(b.geometry(false), propMat); m.castShadow = true; g.add(m); }
   return g;
 }

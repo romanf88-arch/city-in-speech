@@ -13,7 +13,8 @@ async function boot() {
     try { const { loadPeople } = await import('./actors.js'); await loadPeople(); } catch (e) { console.warn('People kits not loaded:', e && e.message); }
     await game.init(progress);
     game.sites = buildLayout(game);
-    if (game.sea.shore) game.sea.shore(game.world);                       // foam around the quay and piers
+    if (game.sea.shore) game.sea.shore(game.world);
+    try { const { Scatter } = await import('./scatter.js'); game.scatter = new Scatter(game); } catch (e) { console.warn('Ground cover not built:', e); }   // small things on the ground                       // foam around the quay and piers
     if (game.backdrop && game.backdrop.ready) await game.backdrop.ready.catch(() => {});   // so the mountains do not pop in
     progress(0.8);
     let story = null;

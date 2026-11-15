@@ -7,16 +7,40 @@ import { Fires } from './fire.js';
 import { Flora } from './flora.js';
 import { Surfaces } from './surfaces.js';
 import { Kit } from './kit.js';
-import { Actor, makeProp } from './actors.js';
+import { Actor, makeProp, poseQueued } from './actors.js';
 import { UI } from './ui.js';
 import { Audio } from './audio.js';
+import { Post } from './post.js';
+import { Music } from './music.js';
 
 export const CONFIG = {
-  walk: 4.2, run: 7.6, back: 2.4, turn: 2.5, radius: 0.36,
+  walk: 2.8, run: 6.2, back: 2.0, turn: 2.5, radius: 0.36,   // walk was 4.2 and run 7.6: a jogging pace no walking stride can match
+  accel: 9, brake: 16, turnIn: 14,   // speed builds at 9 m/s each second and falls at 16; turning reaches its full rate in about 0.2 s
   camDist: 4.6, camMin: 1.6, camMax: 9, camPitch: 0.26, talkRange: 3.1, step: 1 / 60, saveKey: 'city-in-speech-v2',
 };
+// The frame-rate guard's ladder (see govern). samples: anti-aliasing samples in the town; scale: the share of the
+// screen the scene is drawn at; glow: light spreading round bright things; shadow: the sun's shadow detail.
+// samples 0 means FXAA, a smoothing of edges done on the finished picture (post.js).
+// Measured 2026-11-15 on Intel UHD 620 at 1920x1080 in the market (ms a frame, frames drawn back to back) and for
+// shimmer while turning (against a picture drawn at twice the size; player / the rest):
+//   4 samples, full size   49 ms   1.7 / 1.5
+//   2 samples, full size   42 ms   2.1 / 1.7
+//   FXAA, full size        30 ms   2.5 / 2.2
+//   FXAA, 85%              28 ms   3.1 / 3.1
+//   2 samples, 70%         35 ms   3.3 / 3.4   (the old ladder's last step)
+// Edge samples cost far more on that chip than their share of the picture, so FXAA comes before any shrinking.
+const RUNGS = [
+  { samples: 4, scale: 1, glow: true, shadow: 2048 },
+  { samples: 2, scale: 1, glow: true, shadow: 2048 },
+  { samples: 0, scale: 1, glow: true, shadow: 2048 },
+  { samples: 0, scale: 1, glow: true, shadow: 1024 },
+  { samples: 0, scale: 0.85, glow: true, shadow: 1024 },
+  { samples: 0, scale: 0.7, glow: true, shadow: 1024 },
+  { samples: 0, scale: 0.7, glow: false, shadow: 1024 },
+];
+const RUNG_KEY = 'city-in-speech-rung';   // the last step, so the next visit starts there instead of stuttering first
 const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight', 'Space', 'KeyE', 'Enter']);
-const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _p = new THREE.Vector3();
+const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _p = new THREE.Vector3(), _lodEye = new THREE.Vector3();
 
 export class NPC {
   constructor(game, def) {
@@ -24,7 +48,15 @@ export class NPC {
     this.g = game; this.ghost = !!def.ghost; this.baseMood = def.mood || 'neutral';
     this.actor = new Actor(def.look || {}, def.seed || (game.npcs.size + 3));
     this.actor.mood = this.baseMood;
-    if (def.prop) this.actor.attach(def.propHand || 'handR', makeProp(def.prop));
+    if (def.prop) {
+      const prop = makeProp(def.prop);
+      // A seated person's staff stands on the ground beside them, leaning back toward the shoulder. Held in a hand
+      // resting on the lap it went straight through the legs.
+      if (def.pose === 'sit' && (def.prop === 'staff' || def.prop === 'crook')) {
+        const side = def.propHand === 'handR' ? -1 : 1;
+        prop.position.set(side * 0.3, 0.3, 0.2); prop.rotation.set(-0.25, 0, side * 0.04); this.actor.group.add(prop);
+      } else this.actor.attach(def.propHand || 'handR', prop);
+    }
     if (def.pose) this.actor.pose = def.pose;
     this.home = { x: def.x || 0, z: def.z || 0, h: def.h || 0 };
     this.actor.place(this.home.x, this.home.z, this.home.h, 0);
@@ -94,7 +126,7 @@ export class NPC {
     else if (pd < 7 && this.behavior !== 'ignore') a.lookAt = { x: player.x, y: player.y + 1.55, z: player.z };
     else a.lookAt = null;
     a.y = this.yFix != null ? this.yFix : damp(a.y, sp.ground(a.x, a.z), 14, dt);
-    if (near) a.update(dt, quality); else a.sync();
+    if (near) a.queue(dt, quality); else a.sync();
   }
 }
 
@@ -107,14 +139,18 @@ export class Game {
     this.npcs = new Map(); this.spots = []; this.triggers = []; this.chatter = []; this.flames = []; this.waits = []; this.tickers = [];
     this.spaces = {}; this.space = 'world';
     this.reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.cam = { yaw: Math.PI, pitch: CONFIG.camPitch, dist: CONFIG.camDist, want: CONFIG.camDist, cur: CONFIG.camDist, t: new THREE.Vector3(), mode: 'follow', drag: false, fpYaw: 0, fpPitch: 0, fpLimit: null };
+    this.cam = { dYaw: 0, dPitch: 0, yaw: Math.PI, pitch: CONFIG.camPitch, dist: CONFIG.camDist, want: CONFIG.camDist, cur: CONFIG.camDist, t: new THREE.Vector3(), mode: 'follow', drag: false, fpYaw: 0, fpPitch: 0, fpLimit: null };
     this.focus = null; this.objectiveData = null; this.scale = 1; this.frameMs = []; this.cardsById = {}; this.content = null;
-    this.ui = new UI(this); this.audio = new Audio();
+    this.ui = new UI(this); this.audio = new Audio(); this.music = new Music(this.audio);   // quiet background music (music.js)
   }
 
   async init(progress) {
-    const r = this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, powerPreference: 'high-performance' });
+    const r = this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: false, powerPreference: 'high-performance' });   // anti-aliasing is done in the finishing pass's own picture (post.js)
     r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap; r.toneMapping = THREE.ACESFilmicToneMapping;
+    this.post = new Post(r, this);   // the finishing pass (post.js); ?look=off or F9 shows the old look
+    if (/[?&]look=off/.test(location.search)) this.post.neutral = true;
+    const fq = /[?&]fps=(30|60)/.exec(location.search);   // ?fps=30 or ?fps=60 fixes the pace instead of choosing it
+    if (fq) { this.fpsForced = true; this.pace30 = fq[1] === '30'; }
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(58, 16 / 9, 0.12, 2200);
     this.people = new THREE.Group(); this.scene.add(this.people);
@@ -122,6 +158,7 @@ export class Game {
     this.world = new World(this.scene);
     this.sea = new Sea(this.scene);
     this.sky = new Sky(this.scene, r);
+    if (this.post.enabled) { let k = 0; try { k = +localStorage.getItem(RUNG_KEY) || 0; } catch (e) { /* no storage: start at the top */ } if (k > 0 && k < RUNGS.length) this.setRung(k); }
     this.backdrop = new Backdrop(this.scene, this.world);   // the far plain, mountains, and islands
     this.kit = new Kit(this.world);
     this.flora = this.kit.flora = new Flora(this.kit, this.world);   // trees, shrubs, and grass
@@ -145,7 +182,13 @@ export class Game {
     // Warm lights that follow the nearest flames at night.
     this.fireLights = [0, 1, 2].map(() => { const l = new THREE.PointLight(0xff9a4a, 0, 26, 1.6); this.scene.add(l); return l; });
     this.bindInput();
-    this.resize(); window.addEventListener('resize', () => this.resize());
+    // A new canvas size takes effect at the start of the next frame, before it is drawn. Resizing the canvas wipes
+    // it, so resizing after a frame was drawn put a black frame on screen.
+    this.resize(); window.addEventListener('resize', () => { this.needResize = true; });
+    // If the graphics driver drops the drawing context (the screen goes black until it comes back), count it, so a
+    // blink that is the computer's rather than the game's shows up in game.snapshot().lostContext.
+    this.lostContext = 0;
+    this.canvas.addEventListener('webglcontextlost', () => { this.lostContext++; console.warn('The graphics context was lost (' + this.lostContext + ')'); });
     document.addEventListener('visibilitychange', () => { if (document.hidden && this.mode === 'play') this.pause(true); this.last = performance.now(); });
     window.addEventListener('blur', () => this.keys.clear());
   }
@@ -158,6 +201,9 @@ export class Game {
       if (this.mode === 'play' && !this.overlayOpen() && MOVE_KEYS.has(e.code)) e.preventDefault();
       this.audio.unlock();
       if (!e.repeat) this.pressed.add(e.code);
+      if (e.code === 'F9' && !e.repeat && this.post.ok) { e.preventDefault(); this.post.neutral = !this.post.neutral; }
+      if (e.code === 'F8' && !e.repeat) { e.preventDefault(); this.showStats = !this.showStats; this.drawStats(); }
+      if (e.code === 'F7' && !e.repeat && this.post.ok) { e.preventDefault(); this.post.blur = !this.post.blur; this.ui.hint(this.post.blur ? 'Motion blur on' : 'Motion blur off'); setTimeout(() => this.ui.hint(null), 1500); this.drawStats(); }
       this.keys.add(e.code);
       if (e.code === 'Escape' || e.code === 'KeyP') { if (this.closeOverlays()) return; if (this.mode === 'play' && !this.ui.waiting) this.pause(true); else if (this.mode === 'paused') this.pause(false); }
       if (this.mode === 'play' && !this.ui.waiting && !this.ui.pickRes) {
@@ -175,7 +221,7 @@ export class Game {
         this.cam.fpYaw -= dx * 0.004; this.cam.fpPitch = clamp(this.cam.fpPitch + dy * 0.0035, -1.1, 1.1);
         const L = this.cam.fpLimit; if (L) { this.cam.fpYaw = clamp(this.cam.fpYaw, -L[0], L[0]); this.cam.fpPitch = clamp(this.cam.fpPitch, -L[1], L[1]); }
         if (L && (Math.abs(this.cam.fpYaw) >= L[0] - 0.001) && this.onStrain) this.onStrain();
-      } else { this.cam.yaw -= dx * 0.0048; this.cam.pitch = clamp(this.cam.pitch + dy * 0.0036, -0.35, 1.15); }
+      } else { this.cam.dYaw -= dx * 0.0048; this.cam.dPitch += dy * 0.0036; }   // taken up over a few steps in updateCamera
     });
     const up = () => { this.cam.drag = false; };
     c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
@@ -183,6 +229,7 @@ export class Game {
     $('btnJournal').onclick = () => this.toggle('journal'); $('btnMap').onclick = () => this.toggle('map');
     $('btnJournalClose').onclick = () => this.toggle('journal'); $('btnMapClose').onclick = () => this.toggle('map');
     $('btnPause').onclick = () => this.pause(true); $('btnResume').onclick = () => this.pause(false);
+    $('btnMusic').onclick = () => { const on = !this.music.on; this.audio.unlock(); this.music.setOn(on); $('btnMusic').textContent = on ? 'Music on' : 'Music off'; $('btnMusic').setAttribute('aria-pressed', String(on)); };
     $('btnSound').onclick = () => { const on = !this.audio.on; this.audio.unlock(); this.audio.setOn(on); $('btnSound').textContent = on ? 'Sound on' : 'Sound off'; $('btnSound').setAttribute('aria-pressed', String(on)); };
     $('btnMotion').onclick = () => { this.reduceMotion = !this.reduceMotion; $('btnMotion').textContent = 'Reduce motion: ' + (this.reduceMotion ? 'on' : 'off'); $('btnMotion').setAttribute('aria-pressed', String(this.reduceMotion)); };
     $('btnRestart').onclick = () => $('restartAsk').classList.remove('hidden');
@@ -202,7 +249,9 @@ export class Game {
   }
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25) * this.scale);
+    // With the finishing pass the canvas always matches the window, and the frame-rate guard lowers the drawing
+    // size inside the pass instead (post.scale), which needs no new canvas.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25) * (this.post && this.post.enabled ? 1 : this.scale));
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
   }
@@ -262,8 +311,8 @@ export class Game {
   env(name, seconds = 3) { this.envName = name; this.sky.set(name, this.ui.auto ? 0 : seconds); }
   teleport(space, x, z, heading) {
     this.space = space;
-    const p = this.player; p.x = x; p.z = z; if (heading != null) { p.heading = heading; this.cam.yaw = heading; }
-    p.y = this.spaces[space].ground(x, z); p.sync();
+    const p = this.player; p.x = x; p.z = z; this.cam.dYaw = this.cam.dPitch = 0; if (heading != null) { p.heading = heading; this.cam.yaw = heading; }
+    p.y = this.spaces[space].ground(x, z); p.vel = 0; p.turnV = 0; p.sync();
     this.cam.cur = this.cam.want; this.snapCam = true;
     if (this.onSpace) this.onSpace(space);
     if (this.objectiveData) this.objective(this.objectiveData.text, this.objectiveData.x != null ? this.objectiveData : null);
@@ -279,15 +328,25 @@ export class Game {
 
   // ---------- main loop ----------
   frame(now) {
-    const dt = Math.min(0.25, (now - this.last) / 1000); this.last = now;
+    requestAnimationFrame((t) => this.frame(t));
+    // When 60 frames a second is out of reach the game draws on every other display refresh, so every frame lasts
+    // the same time. A rate that wanders between 25 and 40 looks jerkier than a steady 30.
+    if (this.pace30 && now - this.last < 28) return;
+    const t0 = performance.now();
+    let dt = Math.min(0.25, (now - this.last) / 1000); this.last = now;
+    const raw = dt;
+    // Round to whole simulation steps when close, so each drawn frame moves the world on by the same amount
+    // (one step at 60 a second, two at 30) instead of one, then two, then one.
+    const ns = dt / CONFIG.step, nr = Math.round(ns);
+    if (nr >= 1 && nr <= 4 && Math.abs(ns - nr) < 0.25) dt = nr * CONFIG.step;
+    if (this.needResize) { this.needResize = false; this.resize(); }
     if (this.mode === 'play') {
       this.acc += dt * this.timeScale; let n = 0;
-      while (this.acc >= CONFIG.step && n < 5) { try { this.step(CONFIG.step); } catch (e) { if (!this.lastError) console.error(e); this.lastError = String(e && e.stack || e); } this.acc -= CONFIG.step; n++; }
+      while (this.acc >= CONFIG.step - 1e-6 && n < 5) { try { this.step(CONFIG.step); } catch (e) { if (!this.lastError) console.error(e); this.lastError = String(e && e.stack || e); } this.acc -= CONFIG.step; n++; }
       if (n === 5) this.acc = 0;
     }
     this.render(dt);
-    this.govern(dt);
-    requestAnimationFrame((t) => this.frame(t));
+    this.govern(raw, performance.now() - t0);
   }
   tick(n = 60) { for (let i = 0; i < n; i++) this.step(CONFIG.step); }
 
@@ -304,11 +363,19 @@ export class Game {
     }
     if (this.cam.mode === 'first' && this.cam.fpLimit) { turn = 0; fwd = 0; }
     if (this.pull && free) { fwd = fwd < 0 ? 0 : Math.max(fwd, this.pull); }
-    p.heading += turn * CONFIG.turn * dt;
+    // Turning eases in and out over about a fifth of a second, and is a little slower at a run.
+    const runK = clamp((Math.abs(p.vel || 0) - CONFIG.walk) / (CONFIG.run - CONFIG.walk), 0, 1);
+    p.turnV = damp(p.turnV || 0, turn * CONFIG.turn * (1 - 0.2 * runK), CONFIG.turnIn, dt);
+    p.heading += p.turnV * dt;
     if (this.cam.mode === 'follow' && this.cam.drag && fwd > 0) p.heading = dampAngle(p.heading, this.cam.yaw, 10, dt);
     if (this.cam.mode === 'first' && !this.cam.fpLimit && fwd !== 0) { p.heading += this.cam.fpYaw * Math.min(1, 6 * dt); this.cam.fpYaw *= 1 - Math.min(1, 6 * dt); }
     const run = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
-    const speed = (fwd > 0 ? (run ? CONFIG.run : CONFIG.walk) : fwd < 0 ? -CONFIG.back : 0) * (this.speedScale || 1);
+    const want = (fwd > 0 ? (run ? CONFIG.run : CONFIG.walk) : fwd < 0 ? -CONFIG.back : 0) * (this.speedScale || 1);
+    // Speed builds up and falls off over a few tenths of a second instead of jumping, so starting and stopping have
+    // some weight. Stopping is quicker than starting, so the player never feels the character slide.
+    const v0 = p.vel || 0, gaining = Math.abs(want) > Math.abs(v0) && want * v0 >= 0;
+    p.vel = want > v0 ? Math.min(want, v0 + (gaining ? CONFIG.accel : CONFIG.brake) * dt) : Math.max(want, v0 - (gaining ? CONFIG.accel : CONFIG.brake) * dt);
+    const speed = p.vel;
     const ox = p.x, oz = p.z;
     if (speed !== 0) {
       let nx = p.x + Math.sin(p.heading) * speed * dt, nz = p.z + Math.cos(p.heading) * speed * dt;
@@ -403,6 +470,13 @@ export class Game {
       return;
     }
     p.group.visible = true;
+    // Mouse movement arrives in uneven bursts, several to a frame or none. The camera takes it up over about 50 ms
+    // instead of all at once, so each drawn frame turns by an even amount and nothing the mouse did is lost.
+    if (c.dYaw || c.dPitch) {
+      const kk = 1 - Math.exp(-20 * dt), ay = c.dYaw * kk, ap = c.dPitch * kk;
+      c.yaw += ay; c.dYaw -= ay; c.pitch = clamp(c.pitch + ap, -0.35, 1.15); c.dPitch -= ap;
+      if (Math.abs(c.dYaw) < 1e-5) c.dYaw = 0; if (Math.abs(c.dPitch) < 1e-5) c.dPitch = 0;
+    }
     let tx = p.x, ty = p.y + 1.5, tz = p.z, yaw = c.yaw, pitch = c.pitch, dist = c.want;
     if (c.mode === 'fixed' && c.fixed) {
       const f = c.fixed, k = this.snapCam ? 1 : 1 - Math.exp(-2.2 * dt);
@@ -422,7 +496,15 @@ export class Game {
       if (c.fYaw != null) { c.yaw = c.fYaw; c.fYaw = null; }
       if (moving && !c.drag && !this.busy) c.yaw = dampAngle(c.yaw, p.heading, 3.2, dt);
       yaw = c.yaw;
+      // Look a little ahead of the player in the direction of travel (up to 1.2 m at a run), with the camera moved
+      // back by the same amount so the player stays the same size on screen.
+      c.ahead = damp(c.ahead || 0, clamp((p.vel || 0) * 0.2, -0.3, 1.2), 2.2, dt);
+      tx += Math.sin(p.heading) * c.ahead; tz += Math.cos(p.heading) * c.ahead; dist += Math.max(0, c.ahead) * 0.9;
     }
+    // A slightly wider view at a run, for a sense of speed.
+    const runK = this.focus ? 0 : clamp((Math.abs(p.vel || 0) - CONFIG.walk) / (CONFIG.run - CONFIG.walk), 0, 1);
+    c.fov = damp(c.fov || 58, 58 + 4 * runK, 3, dt);
+    if (Math.abs(this.camera.fov - c.fov) > 0.02) { this.camera.fov = c.fov; this.camera.updateProjectionMatrix(); }
     const k = this.snapCam ? 1 : 1 - Math.exp(-7 * dt);
     c.t.x = lerp(c.t.x, tx, k); c.t.y = lerp(c.t.y, ty, k); c.t.z = lerp(c.t.z, tz, k);
     // Pull the camera in when something solid is between it and its subject.
@@ -449,13 +531,20 @@ export class Game {
       this.sea.update(dt);
     }
     _p.copy(this.camera.position);
+    poseQueued(this.camera);   // people pose once per drawn frame, the far ones less often (see actors.js)
     this.cullT = (this.cullT || 0) - dt;
     if (this.cullT <= 0) { this.cullT = 0.3; this.kit.cull(_p.x, _p.z, this.sky.cur.fogF + 20); }
     this.sky.update(dt, this.space === 'cave' ? _p : _v.set(p.x, p.y, p.z), this.sea);
     if (this.backdrop && this.space !== 'cave') this.backdrop.update(this.sky, this.camera, dt);
+    // While the camera follows the player, trees choose their level by distance from the player, not the camera:
+    // the camera swings round the player in a circle about 9 m across when turning, and trees near the switching
+    // distance changed level back and forth (23 switches in a half turn in the fields, measured 2026-11-15).
+    this.flora.lodEye = this.mode === 'play' && this.cam.mode === 'follow' ? _lodEye.set(p.x, p.y + 1.5, p.z) : null;
     this.flora.update(this.sky, this.camera, dt);
+    if (this.scatter) this.scatter.update(this.camera.position, dt);
     this.surface.update(this.sky, this.camera, dt);
     this.updateFlames(dt);
+    if (this.music) { const p0 = this.player, where = this.space === 'cave' ? 'cave' : this.space === 'lydia' || this.envName === 'lydia' ? 'lydia' : p0.z < -84 ? 'fields' : 'town'; this.music.update(this.mode === 'play' || this.mode === 'paused' ? where : 'town', this.sky.cur.stars > 0.5, this.busy ? 1 : 0); }
     if (this.objectiveData && this.objectiveData.x != null && this.mode === 'play') {
       const o = this.objectiveData, dx = o.x - p.x, dz = o.z - p.z, d = Math.hypot(dx, dz);
       this.beam.material.opacity = 0.95 * clamp((d - 3) / 6, 0, 1); this.beam.rotation.y += dt * 1.5; this.beam.position.y = (this.beamBase || 0) + Math.sin(this.time * 2) * 0.18; this.beam.scale.setScalar(clamp(d / 30, 1, 5));
@@ -471,7 +560,7 @@ export class Game {
       n.actor.headWorld(_v2); _v2.y += 0.25; const dist = _v2.distanceTo(this.camera.position); _v2.project(this.camera);
       this.ui.placeBubble(id, (_v2.x * 0.5 + 0.5) * w, (-_v2.y * 0.5 + 0.5) * h, _v2.z < 1 && dist < 26 && !n.hidden && n.space === this.space && !this.busy);
     }
-    try { this.renderer.render(this.scene, this.camera); } catch (e) { if (!this.lastError) console.error(e); this.lastError = String(e && e.stack || e); }
+    try { if (this.post.enabled) this.post.render(this.scene, this.camera); else { this.renderer.setRenderTarget(null); this.renderer.render(this.scene, this.camera); } } catch (e) { if (!this.lastError) console.error(e); this.lastError = String(e && e.stack || e); }
   }
 
   updateFlames(dt) {
@@ -502,17 +591,86 @@ export class Game {
     this.flames.push(f); return f;
   }
 
-  // Lower the drawing resolution if the frame rate is poor; raise it again if there is room.
-  govern(dt) {
+  // F8: a small readout of how the game is running, for reporting stutters and blinks.
+  drawStats() {
+    let el = document.getElementById('runStats');
+    if (!this.showStats) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('div'); el.id = 'runStats'; el.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:50;font:12px/1.4 system-ui,sans-serif;color:#f4ecdc;background:rgba(20,16,12,.72);padding:6px 9px;border-radius:6px;pointer-events:none;white-space:pre'; document.body.appendChild(el); }
+    const P = this.post, gpu = P && P.gpuMs ? P.gpuMs() : null;
+    el.textContent = (this.fps ? this.fps + ' frames a second' : 'measuring...') + (this.pace30 ? ', held at a steady 30' : '') +
+      '\nscene drawn at ' + Math.round((P && P.enabled ? P.scale : this.scale) * 100) + '% of full size' + (P && P.enabled ? (P.samples ? ', ' + P.samples + ' edge samples' : ', FXAA edges') : '') + (P && !P.glow ? ', glow off' : '') + (this.sky.sun.shadow.mapSize.x < 2048 ? ', coarser shadows' : '') +
+      (P && P.enabled ? '\nmotion blur (F7): ' + (!P.blur ? 'off' : P.samples ? 'on, but not drawn while there are edge samples' : 'on') : '') +
+      '\nscreen ' + this.canvas.width + ' by ' + this.canvas.height + ' pixels, step ' + (this.rung || 0) + ' of ' + (RUNGS.length - 1) + (this.lateShare != null ? ', ' + Math.round(this.lateShare * 100) + '% of frames late' : '') +
+      '\ngraphics chip: ' + (gpu != null ? gpu.toFixed(1) + ' ms a frame' : P && P.timer && P.timer.ext ? 'measuring...' : 'not reported by this browser') +
+      '\ndrawing context lost: ' + (this.lostContext || 0) + ' times';
+  }
+
+  // The frame-rate guard, checked about once a second while playing.
+  //   1. If 60 frames a second is out of reach, draw a steady 30 (see frame()).
+  //   2. Hold the frame inside its time by stepping down a ladder of settings (RUNGS), one rung a check, and back
+  //      up when there is room. The rungs are in the order of time saved for shimmer added while the camera moves
+  //      (see RUNGS). A scene drawn smaller than the screen shimmers on cloth and walls when turning, so the size
+  //      goes late and never below 70%. Nothing changes on the canvas, so there is no black frame.
+  // Late frames decide a step down; the graphics chip's own timer, where the browser reports it, can only stop one
+  // (when it shows the chip has time to spare) or allow an early step up.
+  govern(iv, cpu) {
     if (this.mode !== 'play' || document.hidden) return;
-    this.frameMs.push(dt * 1000);
-    if (this.frameMs.length < 90) return;
-    const sorted = this.frameMs.slice().sort((a, b) => a - b), med = sorted[45]; this.frameMs = [];
-    // Only step down below about 24 frames a second. A steady 30 (a capped display or a background tab) is left alone.
-    if (med > 42 && this.scale > 0.55) { this.scale = Math.max(0.55, this.scale - 0.15); this.resize(); }
-    else if (med > 42 && this.scale <= 0.55 && this.sky.sun.shadow.mapSize.x > 1024) { this.sky.sun.shadow.mapSize.set(1024, 1024); if (this.sky.sun.shadow.map) { this.sky.sun.shadow.map.dispose(); this.sky.sun.shadow.map = null; } }
-    else if (med < 20 && this.scale < 1) { this.scale = Math.min(1, this.scale + 0.1); this.resize(); }
-    this.fps = Math.round(1000 / med);
+    const P = this.post;
+    this.frameMs.push(iv * 1000); (this.cpuMs || (this.cpuMs = [])).push(cpu);
+    if (this.frameMs.length < (this.pace30 ? 30 : 60)) return;
+    const med = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
+    const frame = med(this.frameMs), cpuMs = med(this.cpuMs), lateAt = (this.pace30 ? 1000 / 30 : 1000 / 60) * 1.25;
+    this.lateShare = this.frameMs.filter((ms) => ms > lateAt).length / this.frameMs.length;   // frames that missed the pace
+    this.frameMs = []; this.cpuMs = [];
+    this.fps = Math.round(1000 / frame);
+    if (this.showStats) this.drawStats();
+    if (!P.enabled) {   // the old way, for browsers without the finishing pass: a smaller canvas
+      if (frame > 42 && this.scale > 0.55) { this.scale = Math.max(0.55, this.scale - 0.15); this.needResize = true; }
+      else if (frame < 20 && this.scale < 1) { this.scale = Math.min(1, this.scale + 0.1); this.needResize = true; }
+      return;
+    }
+    const forced = this.fpsForced;
+    // 1. pace
+    if (!this.pace30 && !forced) {
+      this.slowChecks = frame > 19 ? (this.slowChecks || 0) + 1 : 0;
+      if (this.slowChecks >= 2) {
+        this.pace30 = true; this.slowChecks = 0;
+        if (this.leftPace != null && this.time - this.leftPace < 15) this.paceKept = true;   // it went back to 30 soon after trying 60: stay at 30
+      }
+      if (this.slowChecks || this.pace30) return;   // no size change while the pace is being decided
+    }
+    const gpu = P.gpuMs(), budget = this.pace30 ? 27 : 14.5, work = gpu == null ? null : Math.max(gpu, cpuMs);
+    if (this.pace30 && !forced && !this.paceKept && work != null) { this.fastChecks = !this.rung && work < 11 ? (this.fastChecks || 0) + 1 : 0; if (this.fastChecks >= 4) { this.pace30 = false; this.fastChecks = 0; this.leftPace = this.time; return; } }
+    // 2. the ladder. A step down needs frames that actually came late (more than one in six past the pace), and the chip
+    // not shown to have time to spare: when the page's own work is what makes frames late, a plainer picture would not
+    // help. (Until 2026-11-15 the chip's timer alone decided. On Intel UHD 620 it reads high when the chip idles between
+    // frames, and the guard went to the bottom of the ladder while frames were on time.) A step up comes when the chip
+    // shows room, or after eight calm checks in a row; the hold in setRung keeps a failed step up from repeating soon.
+    const late = this.lateShare > 1 / 6;
+    if (this.upAt != null && this.rung === this.upRung && this.time - this.upAt > 12) { this.failUps = 0; this.upRung = null; }   // the last step up held
+    this.calm = late ? 0 : (this.calm || 0) + 1;
+    const over = late && (gpu == null || gpu > budget * 0.9);
+    let room = !late && gpu != null && gpu < budget * 0.8;
+    if (!late && this.calm >= 8) { room = true; this.calm = 0; }
+    this.rungHold = Math.max(0, (this.rungHold || 0) - 1);
+    if (over && (this.rung || 0) < RUNGS.length - 1) this.setRung((this.rung || 0) + 1);
+    else if (room && this.rung > 0 && !this.rungHold) this.setRung(this.rung - 1);
+  }
+  setRung(i) {
+    const P = this.post, R = RUNGS[i], sun = this.sky.sun;
+    // After a step down, wait before stepping up again, so nothing switches on and off every second; much longer if the
+    // last step up was undone within 12 seconds, and twice as long again for each such failure in a row (45, 90, 180,
+    // 360 checks), so a machine that cannot hold the higher step does not stutter while trying it every minute. A step
+    // up that lasts 12 seconds clears the count (see govern).
+    if (i > (this.rung || 0)) {
+      const undone = this.upAt != null && this.time - this.upAt < 12;
+      if (undone) this.failUps = (this.failUps || 0) + 1;
+      this.rungHold = undone ? 45 * 2 ** Math.min(3, this.failUps - 1) : 8;
+    } else { this.upAt = this.time; this.upRung = i; }
+    this.rung = i;
+    try { localStorage.setItem(RUNG_KEY, String(i)); } catch (e) { /* no storage: start at the top next time */ }
+    P.setSamples(R.samples); P.scale = R.scale; P.glow = R.glow;
+    if (sun.shadow.mapSize.x !== R.shadow) { sun.shadow.mapSize.set(R.shadow, R.shadow); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
   }
 
   // ---------- map ----------
@@ -548,6 +706,6 @@ export class Game {
   shotFrom(name, pos, look) { const c = this.camera; const keep = this.mode; this.mode = 'shot'; c.position.set(pos[0], pos[1], pos[2]); c.lookAt(look[0], look[1], look[2]); const r = this.shot(name); this.mode = keep; return r; }
   snapshot() {
     const p = this.player;
-    return { mode: this.mode, space: this.space, busy: this.busy, x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2), h: +p.heading.toFixed(2), flags: Object.assign({}, this.flags), cards: this.cards.length, objective: this.objectiveData && this.objectiveData.text, fps: this.fps, scale: this.scale, npcs: this.npcs.size, missing: this.kit.missing, error: this.lastError || null };
+    return { mode: this.mode, space: this.space, busy: this.busy, x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2), h: +p.heading.toFixed(2), flags: Object.assign({}, this.flags), cards: this.cards.length, objective: this.objectiveData && this.objectiveData.text, fps: this.fps, scale: this.post && this.post.enabled ? +this.post.scale.toFixed(2) : this.scale, rung: this.rung || 0, pace30: !!this.pace30, lostContext: this.lostContext || 0, gpu: this.post && this.post.gpuMs ? this.post.gpuMs() : null, npcs: this.npcs.size, missing: this.kit.missing, error: this.lastError || null };
   }
 }

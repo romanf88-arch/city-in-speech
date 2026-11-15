@@ -19,6 +19,8 @@ export function setupCave(g, api) {
   const pond = PLACES.pond;
   const mirror = new Reflector(new THREE.CircleGeometry(7.3, 28), { textureWidth: 512, textureHeight: 512, color: 0x8fa3a8, clipBias: 0.003, multisample: 0 });
   mirror.rotation.x = -PI / 2; mirror.position.set(pond[0], POND_LEVEL, pond[1]);
+  // The finishing pass (post.js) signals with a negative exposure; the mirror's own picture is drawn the plain way.
+  { const before = mirror.onBeforeRender; mirror.onBeforeRender = function (r, ...rest) { const e = r.toneMappingExposure; r.toneMappingExposure = Math.abs(e) % 100; before.call(this, r, ...rest); r.toneMappingExposure = e; }; }
   const flat = new THREE.Mesh(new THREE.CircleGeometry(7.3, 28), new THREE.MeshLambertMaterial({ color: 0x4f7f96 })); flat.rotation.x = -PI / 2; flat.position.copy(mirror.position);
   g.kit.zone('north').add(mirror, flat);
   const trees = [['cypress_a', -64.5, -197.5], ['olive_a', -62, -211.5], ['pine_a', -68, -205.5], ['cypress_b', -52, -195.5]].map(([id, x, z]) => g.kit.spawn(id, x, z, x * 0.7, { zone: 'north' }));

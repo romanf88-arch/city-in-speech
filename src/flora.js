@@ -18,6 +18,7 @@ import * as THREE from 'three';
 import { mulberry32, clamp, lerp } from './util.js';
 
 const V3 = THREE.Vector3;
+const _fTint = new THREE.Color(0.95, 0.85, 0.62);
 const CELL = 56;                       // map cells, the same size as kit.js uses
 const NEAR = 46, FAR = 150;            // distances at which a tree changes level
 const SMALL_NEAR = 92, SMALL_FAR = 240; // shrubs and grass: full form up to the first, shrub pictures up to the second
@@ -610,6 +611,7 @@ attribute vec3 aOff;      // from the middle of a leaf card to this corner (zero
 attribute vec4 aData;     // x how much the point sways, y how leaf-like (0 on wood), z darkening, w a random phase
 uniform vec4 uWind;       // x time, y strength, z and w the direction
 uniform float uCard;      // leaf cards are drawn this much larger
+uniform vec3 uFBounce;    // sunlight bounced off the ground, which reaches leaves in shade from the side and below
 `;
 // The start of the vertex stage: picks the leaf picture, grows the cards, and moves the plant in the wind.
 // Shared by the lit material and by the one that draws shadows, so that a shadow sways with its tree.
@@ -701,6 +703,8 @@ void main() {
       irr += ( fLit( d, leaf ) + back * vec3( 0.47, 0.54, 0.18 ) ) * directionalLights[ i ].color * ( i == 0 ? fShade : 1.0 );
     }
   #endif
+  // Bounced light: foliage in shade is never black in a sunny place. More on the sides and undersides, and more on thin leaves.
+  irr += uFBounce * ( 1.0 - 0.6 * max( fN.y, 0.0 ) ) * ( 0.55 + 0.45 * leaf );
   #if NUM_POINT_LIGHTS > 0
     IncidentLight fl;
     for ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) {
@@ -765,13 +769,13 @@ export class Flora {
     for (const s of SHRUBS) { const dk = s.form === 'mound' ? DK_MOUND : DK_SPRAY; this.imps.push({ dk, tile: s.tile, w: this.kinds[dk].rad * 2, h: this.kinds[dk].h }); }
     this.impRT = new THREE.WebGLRenderTarget(1024, 512, { depthBuffer: true, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, colorSpace: THREE.SRGBColorSpace });
     // Materials.
-    const U = this.U = { uWind: { value: new THREE.Vector4(0, 1, WIND_X, WIND_Z) } };
+    const U = this.U = { uWind: { value: new THREE.Vector4(0, 1, WIND_X, WIND_Z) }, uFBounce: { value: new THREE.Color(0, 0, 0) } };
     const leaf = (card) => {
       const m = new THREE.ShaderMaterial({
         uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.lights, THREE.UniformsLib.fog, { map: { value: null }, uCard: { value: card } }]),
         vertexShader: LEAF_VERT, fragmentShader: LEAF_FRAG, lights: true, fog: true, side: THREE.DoubleSide,
       });
-      m.uniforms.map.value = this.atlas; m.uniforms.uWind = U.uWind;
+      m.uniforms.map.value = this.atlas; m.uniforms.uWind = U.uWind; m.uniforms.uFBounce = U.uFBounce;
       return m;
     };
     this.matNear = leaf(1); this.matMid = leaf(MID_CARD);
@@ -1011,6 +1015,8 @@ export class Flora {
     const wind = sky.cur.wind;
     this.time += dt * (0.7 + 0.3 * wind);
     this.U.uWind.value.set(this.time, Math.pow(Math.max(wind, 0), 0.7) * this.motion, WIND_X, WIND_Z);
+    // The same bounce as on the walls (surfaces.js): warm, from the sunlit ground, none by moonlight.
+    this.U.uFBounce.value.copy(sky.cur.sun).multiplyScalar(sky.cur.sunI * Math.max(sky.sunDir.y, 0) * 0.8 * (1 - Math.min(1, sky.cur.stars * 2 + sky.cur.moon))).multiply(_fTint);   // stronger than on walls: leaves also pass light
     if (!this.baked && sky.renderer) this._bake(sky.renderer);
     if (!this.built || !this.world.group.visible) return;
     // How dark the far shadows are: as dark as a real shadow on the ground in this light, and gone when the sun is low
@@ -1053,7 +1059,8 @@ export class Flora {
     };
     const cnt = this.counts; cnt.near = cnt.mid = cnt.far = cnt.shrubs = cnt.grass = cnt.casters = 0;
     const sA = this.shade.geometry.attributes.aA, sB = this.shade.geometry.attributes.aB, sa = sA.array, sb = sB.array, shading = this.matShade.uniforms.uStrength.value > 0.01; let ns = 0, hs = 0;
-    const dist = (i) => { const dx = R.x[i] - cp.x, dy = R.y[i] + R.hh[i] - cp.y, dz = R.z[i] - cp.z; return Math.sqrt(dx * dx + dy * dy + dz * dz); };
+    const ep = this.lodEye || cp;   // where levels and fades are measured from (game.js sets the player while following)
+    const dist = (i) => { const dx = R.x[i] - ep.x, dy = R.y[i] + R.hh[i] - ep.y, dz = R.z[i] - ep.z; return Math.sqrt(dx * dx + dy * dy + dz * dz); };
     for (const c of this.cells) {
       if (!((mask >> c.zi) & 1)) continue;
       const ex = c.x - cp.x, ey = c.y - cp.y, ez = c.z - cp.z, dc = Math.sqrt(ex * ex + ey * ey + ez * ez) - c.r; if (dc > fogF) continue;

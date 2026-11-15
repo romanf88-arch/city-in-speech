@@ -21,7 +21,7 @@ const LAYER_SIZE = { plaster: [2, 2], mudbrick: [2, 2], ashlar: [2.4, 2], rubble
 
 // The kit's palette, in the order kitlib.py numbers it.
 const PAL = [['whitewash', 'e8dfcf'], ['plaster', 'd9c4a3'], ['mudbrick', 'b89b78'], ['stone', 'a89f91'], ['dstone', '6f675c'], ['marble', 'efe9dc'], ['paving', 'b9ae9c'],
-  ['tile', 'b5583a'], ['dtile', '8f4530'], ['wood', '6b4a32'], ['dwood', '4a3423'], ['rope', 'c2a468'], ['bronze', 'a8733a'], ['patina', '5f8f7a'], ['dpatina', '4d7a69'], ['gold', 'd9a93c'], ['iron', '3b3835'],
+  ['tile', 'ad5e44'], ['dtile', '87493a'], ['wood', '6b4a32'], ['dwood', '4a3423'], ['rope', 'c2a468'], ['bronze', 'a8733a'], ['patina', '5f8f7a'], ['dpatina', '4d7a69'], ['gold', 'd9a93c'], ['iron', '3b3835'],
   ['olive', '7d8f5a'], ['lolive', '8fa06a'], ['dolive', '6f8250'], ['cypress', '2f4f3a'], ['pine', '3f6b3f'], ['trunk', '5a4634'],
   ['red', 'a33b2e'], ['blue', '2f5f7a'], ['saffron', 'd1a23a'], ['cream', 'e6dcc0'], ['papyrus', 'e3d5a8'], ['clay', 'b86a45'], ['glaze', '2a2522'], ['wool', 'e9e2d0'], ['flame', 'ffb347'], ['core', 'fff0b0'], ['pink', 'c68f7f']];
 const PAL_LIN = PAL.map(([, h]) => { const c = new THREE.Color('#' + h); return [c.r, c.g, c.b]; });
@@ -83,6 +83,10 @@ def('iron', { layer: 'metal', crease: 50, tex: 0.6, dark: 0.3, lowT: 0.2, wCol: 
 def('cloth', { layer: 'cloth', crease: 48, blend: true, tex: 0.9, dark: 0.25, lowN: 0.12, lowT: 0.24, wCol: 0x9a8d78, wAmt: 0.3, wK: [0, 0.2, 0.2, 0.62], spec: 0, streak: 0.3 });
 def('sack', { layer: 'cloth', su: 0.5, sv: 0.5, crease: 48, blend: true, tex: 1.0, dark: 0.3, lowN: 0.12, lowT: 0.24, spec: 0, streak: 0.3 });
 def('rock', { layer: 'rock', crease: 56, blend: true, tex: 1.0, dark: 0.4, lowN: 0.1, lowT: 0.3, wCol: 0x9a946c, wAmt: 0.35, wK: [0, 0.25, 0, 0.6], lCol: 0x56602f, lH: 0.6, lAmt: 0.45, north: 0.5, spec: 0.02, streak: 0.5 });
+// Rocks made in code (rocks.js): the same stone, with the edges between broken faces kept sharp.
+def('rockcut', { layer: 'rock', crease: 30, blend: true, tex: 1.0, dark: 0.4, lowN: 0.1, lowT: 0.3, wCol: 0x9a946c, wAmt: 0.35, wK: [0, 0.25, 0, 0.6], lCol: 0x56602f, lH: 0.6, lAmt: 0.45, north: 0.5, spec: 0.02, streak: 0.5 });
+// The walls of the cave: the same stone, darker, slightly damp, with no lichen or weather streaks (nothing grows in the dark).
+def('caverock', { layer: 'rock', crease: 50, blend: true, tex: 1.0, dark: 0.5, lowN: 0.12, lowT: 0.3, wCol: 0x4a3a2c, wAmt: 0.2, wK: [0, 0.25, 0, 0.6], lCol: 0x2a2018, lH: 0.5, lAmt: 0.35, spec: 0.08, shine: 16, streak: 0.35 });
 def('slabs', { layer: 'slabs', tex: 0.8, dark: 0.2, lowN: 0.04, lowT: 0.22, wCol: 0xa8946c, wAmt: 0.8, wK: [1.0, 0, 0.2, 0.86], spec: 0.07, shine: 22, streak: 0.3 });
 def('fiber', { layer: 'fiber', map: 'grain', crease: 45, tex: 1.0, dark: 0.45, spec: 0 });
 def('thatch', { layer: 'fiber', map: 'slope', crease: 45, su: 1.2, sv: 1.2, nrm: 1.4, tex: 1.0, dark: 0.5, lowT: 0.3, wCol: 0x7a7466, wAmt: 0.55, wK: [0.2, 0, 0, 0.5], spec: 0 });
@@ -125,6 +129,14 @@ function classify(asset, pal) {
 // ---------------------------------------------------------------- pattern pictures
 const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const fract = (x) => x - Math.floor(x);
+// Each vertex's own height in its model (for the grime at the foot of a wall and the light bounced up from the ground),
+// kept as its own value so that it survives when the kit merges models into one shape in world space (kit.build).
+function addY(g) {
+  if (g.attributes.aY) return;
+  const P = g.attributes.position.array, n = g.attributes.position.count, y = new Float32Array(n);
+  for (let i = 0; i < n; i++) y[i] = P[i * 3 + 1];
+  g.setAttribute('aY', new THREE.BufferAttribute(y, 1));
+}
 
 // Builds every pattern layer. Each layer is a height field in meters, a tone (0.5 is neutral) and
 // a mask (joints, cracks, gaps, paint). The height becomes two slope channels for the lighting.
@@ -360,7 +372,7 @@ function buildLayers() {
   });
   const tex = new THREE.DataArrayTexture(data, N, N, LAYERS.length);
   tex.format = THREE.RGBAFormat; tex.type = THREE.UnsignedByteType; tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true; tex.anisotropy = 4; tex.needsUpdate = true;
+  tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true; tex.anisotropy = 8; tex.needsUpdate = true;
 
   // The low-detail picture laid over the world: red broad tone patches, green where weathering
   // takes hold, blue and alpha the slope of a gentle unevenness.
@@ -399,7 +411,8 @@ function buildParams(range) {
 const VERT_PARS = /* glsl */`
 attribute vec3 aT;                         // direction along which the picture's "across" runs, in the model's space
 attribute vec3 aSurf;                      // x surface type, y baked occlusion
-varying vec2 vSUv;                         // picture coordinates in meters
+attribute float aY;                        // the vertex's height in its own model (see addY)
+varying vec2 vSUv;                        // picture coordinates in meters
 varying vec4 vSLow;                        // xy coordinates of the low-detail picture, z height above the model's base, w how far the face looks north
 varying vec3 vST;
 varying vec3 vSA;                          // x type, y occlusion, z how far the face looks up
@@ -414,7 +427,7 @@ const VERT_MAIN = /* glsl */`
   vec3 sWN = normalize(mat3(sM) * normal);
   vSUv = uv;
   // The low-detail picture is laid on at a slant so that it never runs edge-on along a wall, a floor or a roof.
-  vSLow = vec4(dot(sWP, vec3(0.0786, 0.0, -0.0786)), dot(sWP, vec3(-0.0711, 0.0474, -0.0711)), position.y, -sWN.z);
+  vSLow = vec4(dot(sWP, vec3(0.0786, 0.0, -0.0786)), dot(sWP, vec3(-0.0711, 0.0474, -0.0711)), aY, -sWN.z);
   vST = mat3(viewMatrix) * (mat3(sM) * aT);
   vSA = vec3(aSurf.x, aSurf.y, sWN.y);
 `;
@@ -423,6 +436,7 @@ uniform highp sampler2DArray uSurf;
 uniform sampler2D uSNoise;
 uniform vec4 uSP[${NT * 8}];
 uniform vec4 uSEnv;                        // x how wet everything is
+uniform vec3 uSBounce;                     // sunlight bounced off the ground (irradiance on a wall facing it)
 varying vec2 vSUv;
 varying vec4 vSLow;
 varying vec3 vST;
@@ -487,7 +501,10 @@ function patch(sh, u) {
     .replace('#include <common>', '#include <common>\n' + FRAG_PARS)
     .replace('#include <color_fragment>', '#include <color_fragment>\n' + FRAG_COLOR)
     .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + FRAG_NORMAL)
-    .replace('#include <lights_phong_fragment>', '#include <lights_phong_fragment>\n  material.specularStrength = sSpecK; material.specularShininess = sShine;');
+    .replace('#include <lights_phong_fragment>', '#include <lights_phong_fragment>\n  material.specularStrength = sSpecK; material.specularShininess = sShine;')
+    // Sunlight bounced off the bright ground: warm light on walls, strongest low down. It keeps walls in shade
+    // from going a flat grey-blue, as whitewash does in a sunny street.
+    .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  { vec3 wN = inverseTransformDirection(normal, viewMatrix); float side = 1.0 - abs(wN.y) * 0.85; float low = mix(1.0, 0.4, smoothstep(0.0, 7.0, vSLow.z));\n    reflectedLight.indirectDiffuse += uSBounce * side * low * BRDF_Lambert(diffuseColor.rgb) * (1.0 - max(wN.y, 0.0)); }');
 }
 
 // ---------------------------------------------------------------- geometry helpers
@@ -511,12 +528,13 @@ function mainAxes(c) {
   return { v1, v2, v3: norm3(cross3(v1, v2)), l1, l2 };
 }
 
+const _bounceTint = new THREE.Color(1.0, 0.82, 0.62);
 export class Surfaces {
   constructor() {
     const t0 = performance.now();
     const L = buildLayers();
     this.layers = L.tex; this.low = L.low;
-    this.u = { uSurf: { value: L.tex }, uSNoise: { value: L.low }, uSP: { value: buildParams(L.range) }, uSEnv: { value: new THREE.Vector4(0, 0, 0, 0) } };
+    this.u = { uSurf: { value: L.tex }, uSNoise: { value: L.low }, uSP: { value: buildParams(L.range) }, uSEnv: { value: new THREE.Vector4(0, 0, 0, 0) }, uSBounce: { value: new THREE.Color(0, 0, 0) } };
     const make = (extra) => {
       const m = new THREE.MeshPhongMaterial(Object.assign({ vertexColors: true, specular: 0xffffff, shininess: 20 }, extra));
       m.onBeforeCompile = (sh) => patch(sh, this.u);
@@ -555,6 +573,9 @@ export class Surfaces {
     return out;
   }
 
+  // The same for geometry made in code that is all one kind of surface (the rocks of rocks.js: type 'rock').
+  prepareAs(geometry, assetId, type) { return this._dress(geometry.index ? geometry.toNonIndexed() : geometry, assetId, type); }
+
   // Called by the world for its own flat pieces. Changes the geometry in place and returns the material to use.
   //   pave: the paved squares    street: the earth streets    quay: quay and pier blocks    stake: small wooden posts
   flat(g, kind) {
@@ -568,6 +589,8 @@ export class Surfaces {
     // Rain darkens stone and plaster and gives everything a wet shine.
     const haze = sky && sky.cur ? sky.cur.haze : 1;
     this.u.uSEnv.value.x = Math.min(1, Math.max(0, (haze - 2.2) / 1.2));
+    // Ground bounce: part of the sunlit ground's light (warm earth, about 40% reflective) reaches a wall beside it.
+    if (sky && sky.cur) this.u.uSBounce.value.copy(sky.cur.sun).multiplyScalar(sky.cur.sunI * Math.max(sky.sunDir.y, 0) * 0.3 * (1 - Math.min(1, sky.cur.stars * 2 + sky.cur.moon))).multiply(_bounceTint);   // none by moonlight
   }
 
   // The streets are strips of quads built in a fixed vertex order: left, left, right, right, left, right.
@@ -606,6 +629,7 @@ export class Surfaces {
       }
     }
     g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setAttribute('aT', new THREE.BufferAttribute(aT, 3)); g.setAttribute('aSurf', new THREE.BufferAttribute(aS, 3));
+    addY(g);
     return this.flatMaterial;
   }
 
@@ -800,6 +824,7 @@ export class Surfaces {
     g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     g.setAttribute('aT', new THREE.BufferAttribute(aT, 3));
     g.setAttribute('aSurf', new THREE.BufferAttribute(aS, 3));
+    addY(g);
     return g;
   }
 }
