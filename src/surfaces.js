@@ -27,7 +27,7 @@ const PAL = [['whitewash', 'e8dfcf'], ['plaster', 'd9c4a3'], ['mudbrick', 'b89b7
 const PAL_LIN = PAL.map(([, h]) => { const c = new THREE.Color('#' + h); return [c.r, c.g, c.b]; });
 const PAL_ID = {}; PAL.forEach(([n], i) => { PAL_ID[n] = i; });
 
-const HOUSES = new Set(['house_a', 'house_b', 'house_c', 'courtyard_house', 'warehouse', 'hut']);
+const HOUSES = new Set(['house_a', 'house_b', 'house_c', 'courtyard_house', 'warehouse', 'hut', 'school', 'workshop']);
 const TEMPLES = new Set(['stoa', 'shrine']);
 const PALACE = new Set(['palace_hall', 'palace_wall']);
 const WALLS = new Set(['wall_seg', 'wall_tower', 'gate']);
@@ -93,10 +93,14 @@ def('thatch', { layer: 'fiber', map: 'slope', crease: 45, su: 1.2, sv: 1.2, nrm:
 def('plain', { layer: 'plain', crease: 40, tex: 0.5, dark: 0, lowN: 0.02, lowT: 0.1, spec: 0.02, streak: 0.2 });
 def('leaf', { layer: 'plain', crease: 60, blend: true, tex: 0.6, dark: 0, lowN: 0, lowT: 0.2, spec: 0, streak: 0 });
 def('dark', { layer: 'plain', tex: 0, dark: 0, lowN: 0, lowT: 0, spec: 0, streak: 0 });
+// Inside a house (the schoolroom): limewashed walls that no rain reaches, and a floor of beaten earth.
+def('inwall', { layer: 'plaster', gate: 1, tex: 0.4, dark: 0.3, lowN: 0.1, lowT: 0.14, lCol: 0x8a7350, lH: 0.5, lAmt: 0.35, spec: 0.02, shine: 8, streak: 0 });
+def('earthfloor', { layer: 'plain', crease: 40, tex: 0.5, dark: 0.12, lowN: 0.1, lowT: 0.3, spec: 0, streak: 0 });
 const NT = TYPE_LIST.length;
 
 // What a palette color means on a given model. Names ending in ? are settled per connected piece.
 function classify(asset, pal) {
+  if (asset === 'school' || asset === 'workshop') { if (pal === 'cream' || (pal === 'plaster' && asset === 'school')) return 'inwall'; if (pal === 'mudbrick') return 'earthfloor'; }
   switch (pal) {
     case 'whitewash': return 'whitewash';
     case 'plaster': return HOUSES.has(asset) || TEMPLES.has(asset) ? 'plaster' : 'plain';

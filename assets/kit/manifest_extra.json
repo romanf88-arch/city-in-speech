@@ -1,0 +1,409 @@
+{
+ "meta": {
+  "units": "meters",
+  "axes": "game axes: x = Blender x, y = up (Blender z), z = minus Blender y. An asset's front is +z.",
+  "rot": "box rot is radians about +y, the same sense as three.js rotation.y",
+  "color": "COLOR_0 is linear RGB: palette color times face value jitter times (0.5 + 0.5 * ambient occlusion)",
+  "materials": "kit on everything; glow on the flame faces of brazier and torch_post (second primitive)",
+  "waterline_origin": [
+   "boat_small",
+   "ship_merchant",
+   "ship_trireme"
+  ]
+ },
+ "assets": {
+  "school": {
+   "size": [
+    9.564,
+    5.755,
+    7.908
+   ],
+   "tris": 886,
+   "colliders": [
+    {
+     "t": "box",
+     "x": -3.3,
+     "z": 3.35,
+     "hx": 1.1,
+     "hz": 0.15,
+     "rot": 0.0
+    },
+    {
+     "t": "box",
+     "x": 1.8,
+     "z": 3.35,
+     "hx": 2.6,
+     "hz": 0.15,
+     "rot": 0.0
+    },
+    {
+     "t": "box",
+     "x": 0.0,
+     "z": -3.35,
+     "hx": 4.4,
+     "hz": 0.15,
+     "rot": 0.0
+    },
+    {
+     "t": "box",
+     "x": -4.25,
+     "z": 0.0,
+     "hx": 0.15,
+     "hz": 3.5,
+     "rot": 0.0
+    },
+    {
+     "t": "box",
+     "x": 4.25,
+     "z": 0.0,
+     "hx": 0.15,
+     "hz": 3.5,
+     "rot": 0.0
+    }
+   ],
+   "floors": [
+    {
+     "x": 0.0,
+     "z": 0.0,
+     "hx": 4.1,
+     "hz": 3.2,
+     "y": 0.05
+    }
+   ],
+   "anchors": {
+    "door": [
+     -1.5,
+     0.0,
+     4.7
+    ],
+    "in": [
+     -1.5,
+     0.05,
+     1.9
+    ]
+   }
+  },
+  "klismos": {
+   "size": [
+    0.52,
+    0.905,
+    0.614
+   ],
+   "tris": 82,
+   "colliders": [],
+   "floors": [],
+   "anchors": {
+    "seat": [
+     0.0,
+     0.52,
+     0.0
+    ]
+   }
+  },
+  "school_bench": {
+   "size": [
+    2.6,
+    0.43,
+    0.38
+   ],
+   "tris": 44,
+   "colliders": [],
+   "floors": [],
+   "anchors": {
+    "seat": [
+     0.0,
+     0.43,
+     0.0
+    ]
+   }
+  },
+  "wall_a": {
+   "size": [
+    2.497,
+    0.576,
+    0.227
+   ],
+   "tris": 592,
+   "colliders": [],
+   "floors": [],
+   "anchors": {
+    "mid": [
+     0.0,
+     0.0,
+     0.3
+    ]
+   }
+  },
+  "wall_b": {
+   "size": [
+    2.161,
+    0.886,
+    0.167
+   ],
+   "tris": 274,
+   "colliders": [],
+   "floors": [],
+   "anchors": {
+    "mid": [
+     0.0,
+     0.0,
+     0.3
+    ]
+   }
+  },
+  "tablet_set": {
+   "size": [
+    0.429,
+    0.028,
+    0.272
+   ],
+   "tris": 52,
+   "colliders": [],
+   "floors": [],
+   "anchors": {}
+  },
+  "scroll_bin": {
+   "size": [
+    0.36,
+    0.46,
+    0.342
+   ],
+   "tris": 176,
+   "colliders": [
+    {
+     "t": "circle",
+     "x": 0.0,
+     "z": 0.0,
+     "r": 0.22
+    }
+   ],
+   "floors": [],
+   "anchors": {}
+  },
+  "bone_basket": {
+   "size": [
+    0.3,
+    0.1,
+    0.23
+   ],
+   "tris": 136,
+   "colliders": [],
+   "floors": [],
+   "anchors": {}
+  },
+  "workshop": {
+   "size": [
+    12.863,
+    6.102,
+    8.909
+   ],
+   "tris": 998,
+   "colliders": [
+    {
+     "t": "box",
+     "x": -3.65,
+     "z": 3.85,
+     "hx": 2.35,
+     "hz": 0.15,
+     "rot": 0.0
+    },
+    {
+     "t": "box",
+     "x": 3.65,
+     "z": 3.85,
+     "hx": 2.35,
+     "hz": 0.15,
+     "rot": 0.0
+    },
+    {
+     "t": "box",
+     "x": 0.0,
+     "z": -3.85,
+     "hx": 6.0,
+     "hz": 0.15,
+     "rot": 0.0
+    },
+    {
+     "t": "box",
+     "x": -5.85,
+     "z": 0.0,
+     "hx": 0.15,
+     "hz": 4.0,
+     "rot": 0.0
+    },
+    {
+     "t": "box",
+     "x": 5.85,
+     "z": 0.0,
+     "hx": 0.15,
+     "hz": 4.0,
+     "rot": 0.0
+    }
+   ],
+   "floors": [
+    {
+     "x": 0.0,
+     "z": 0.0,
+     "hx": 5.7,
+     "hz": 3.7,
+     "y": 0.05
+    }
+   ],
+   "anchors": {
+    "door": [
+     0.0,
+     0.0,
+     5.4
+    ],
+    "in": [
+     0.0,
+     0.05,
+     2.3
+    ]
+   }
+  },
+  "shield": {
+   "size": [
+    0.9,
+    0.877,
+    0.14
+   ],
+   "tris": 140,
+   "colliders": [],
+   "floors": [],
+   "anchors": {
+    "mid": [
+     0.0,
+     0.47,
+     0.2
+    ]
+   }
+  },
+  "shield_stack": {
+   "size": [
+    0.9,
+    0.395,
+    0.9
+   ],
+   "tris": 432,
+   "colliders": [
+    {
+     "t": "circle",
+     "x": 0.0,
+     "z": 0.0,
+     "r": 0.5
+    }
+   ],
+   "floors": [],
+   "anchors": {}
+  },
+  "workbench": {
+   "size": [
+    2.0,
+    0.94,
+    0.9
+   ],
+   "tris": 280,
+   "colliders": [
+    {
+     "t": "box",
+     "x": 0.0,
+     "z": 0.0,
+     "hx": 1.0,
+     "hz": 0.42,
+     "rot": 0.0
+    }
+   ],
+   "floors": [],
+   "anchors": {}
+  },
+  "stump_anvil": {
+   "size": [
+    0.72,
+    0.8,
+    0.72
+   ],
+   "tris": 85,
+   "colliders": [
+    {
+     "t": "circle",
+     "x": 0.0,
+     "z": 0.0,
+     "r": 0.32
+    }
+   ],
+   "floors": [],
+   "anchors": {}
+  },
+  "forge": {
+   "size": [
+    1.74,
+    0.85,
+    0.9
+   ],
+   "tris": 96,
+   "colliders": [
+    {
+     "t": "box",
+     "x": 0.325,
+     "z": 0.0,
+     "hx": 0.875,
+     "hz": 0.45,
+     "rot": 0.0
+    }
+   ],
+   "floors": [],
+   "anchors": {
+    "flame": [
+     0.0,
+     0.6,
+     0.02
+    ]
+   }
+  },
+  "loom": {
+   "size": [
+    1.88,
+    2.013,
+    0.889
+   ],
+   "tris": 396,
+   "colliders": [
+    {
+     "t": "box",
+     "x": 0.0,
+     "z": -0.4,
+     "hx": 0.92,
+     "hz": 0.45,
+     "rot": 0.0
+    }
+   ],
+   "floors": [],
+   "anchors": {
+    "weaver": [
+     0.0,
+     0.0,
+     0.6
+    ]
+   }
+  },
+  "wool_basket": {
+   "size": [
+    0.388,
+    0.485,
+    0.394
+   ],
+   "tris": 125,
+   "colliders": [
+    {
+     "t": "circle",
+     "x": 0.0,
+     "z": 0.0,
+     "r": 0.2
+    }
+   ],
+   "floors": [],
+   "anchors": {}
+  }
+ }
+}

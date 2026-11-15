@@ -106,7 +106,7 @@ export class Scatter {
     add('straw', strawGeometry(), new THREE.MeshLambertMaterial());
     add('shard', shardGeometry(), new THREE.MeshLambertMaterial({ side: THREE.DoubleSide }));
 
-    const free = (x, z, r) => { if (!w.walkable(x, z) || onFloor(x, z)) return false; const q = w.resolve(x, z, r); return Math.abs(q[0] - x) < 1e-3 && Math.abs(q[1] - z) < 1e-3; };
+    const free = (x, z, r) => { if (!w.walkable(x, z) || onFloor(x, z) || w.indoor(x, z, 0.35)) return false; const q = w.resolve(x, z, r); return Math.abs(q[0] - x) < 1e-3 && Math.abs(q[1] - z) < 1e-3; };
     const onPaving = (x, z) => w.standY(x, z) > w.groundY(x, z) + 0.01;
     const inPaving = (x, z) => PAVINGS.some((P) => x > P.x0 && x < P.x1 && z > P.z0 && z < P.z1);
     // Raised floors that belong to buildings (the Cephalus courtyard and the like): nothing grows on them.

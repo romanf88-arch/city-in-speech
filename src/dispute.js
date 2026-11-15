@@ -126,7 +126,7 @@ export function renderJournal(g, tab) {
     if (!list.length) { body.append(el('p', null, 'Nothing yet. This page keeps a plain summary of what has happened and what has been argued, so you can catch up at any time.')); return; }
     for (const e of list) {
       const box = el('div', 'sofar'); box.append(el('b', null, e.title));
-      box.append(el('p', e.cross ? 'x' : null, e.text || g.flags.purseText || '')); body.append(box);
+      box.append(el('p', e.cross ? 'x' : null, e.text || g.flags[e.flag || 'purseText'] || '')); body.append(box);
     }
   } else if (tab === 'passages') {
     if (!g.cards.length) { body.append(el('p', null, 'No passages yet. You will collect them as you hear what was said last night. Each one is a place in Plato’s book, retold in plain words.')); return; }

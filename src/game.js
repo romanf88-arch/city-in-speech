@@ -510,13 +510,17 @@ export class Game {
     // Pull the camera in when something solid is between it and its subject.
     const cp = Math.cos(pitch), dx = -Math.sin(yaw) * cp, dy = Math.sin(pitch), dz = -Math.cos(yaw) * cp;
     let ok = dist;
+    const room = this.space === 'world' ? this.world.indoor(p.x, p.z) : null;   // under a roof: the camera may not rise through it
+    this.sky.indoor = damp(this.sky.indoor || 0, room ? 1 : 0, 3, dt);
     for (let s = 0.4; s <= dist + 0.01; s += 0.35) {
       const x = c.t.x + dx * s, y = c.t.y + dy * s, z = c.t.z + dz * s;
-      if (sp.solidAt(x, y, z, 0.3) || y < sp.ground(x, z) + 0.35) { ok = Math.max(0.6, s - 0.45); break; }
+      if (sp.solidAt(x, y, z, 0.3) || y < sp.ground(x, z) + 0.35 || (room && room.inside(x, z, 0.3) && y > room.roofY(x, z))) { ok = Math.max(0.6, s - 0.45); break; }
     }
     c.cur = ok < c.cur ? damp(c.cur, ok, 18, dt) : damp(c.cur, ok, 3, dt);
     if (this.snapCam) c.cur = ok;
     this.camera.position.set(c.t.x + dx * c.cur, c.t.y + dy * c.cur, c.t.z + dz * c.cur);
+    // Backed against a wall indoors, the camera ends up inside the player's head: stop drawing the player then.
+    if (room) p.group.visible = c.cur > 0.95;
     if (this.shake > 0) { if (!this.reduceMotion) { this.camera.position.x += (Math.random() - 0.5) * this.shake * 0.5; this.camera.position.y += (Math.random() - 0.5) * this.shake * 0.35; } this.shake = Math.max(0, this.shake - dt * 0.55); }
     this.camera.lookAt(c.t.x, c.t.y + 0.15, c.t.z);
     this.snapCam = false;
@@ -579,6 +583,11 @@ export class Game {
       const f = nf[0]; l.position.set(f.x, f.y + 0.4, f.z);
       l.intensity = (f.power || 30) * (f.always ? 1 : night) * (0.85 + 0.15 * Math.sin(this.flameT * 9 + i * 2.1) * Math.sin(this.flameT * 5.3 + i));
     });
+    // By day inside a room, one of those lights stands in for the daylight thrown back off the floor where the sun
+    // comes in at the door. Without it everything indoors is lit only by the flat light of the sky.
+    const pp = this.player, room = this.space === 'world' ? this.world.indoor(pp.x, pp.z, 1.5) : null, L2 = this.fireLights[2], sunI = this.sky.cur.sunI;
+    if (room && room.bounce && sunI > 0.3 && night < 0.5) { L2.position.set(room.bounce[0], room.bounce[1], room.bounce[2]); L2.color.copy(this.sky.cur.sun); L2.intensity = 5 * sunI; this.bounceOn = true; }
+    else if (this.bounceOn) { L2.color.set(0xff9a4a); this.bounceOn = false; }
     for (const f of this.flames) if (f.sprite) { f.sprite.material.opacity = (f.always ? 0.9 : 0.25 + 0.65 * night) * (0.8 + 0.2 * Math.sin(this.flameT * 11 + f.x)); }
   }
   addFlame(x, y, z, opts = {}) {

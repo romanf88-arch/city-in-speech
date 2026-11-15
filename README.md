@@ -16,6 +16,7 @@ W and S walk, A and D turn, drag the mouse to look around, Shift runs, E talks, 
 
 - What Socrates and the others argue is from Plato's Republic. The retellings are the game's own. A few short phrases on the passage cards are from C. D. C. Reeve's translation (Hackett, 2004).
 - The guide, her purse, and the six readers in the game are invented. Each reader speaks for real books, which the journal cites by page: Julia Annas, Allan Bloom, Seth Benardete, Eric Havelock, Karl Popper, C. D. C. Reeve, Sean McAleer (CC BY 4.0), and essays in The Cambridge Companion to Plato's Republic and Plato's Republic: A Critical Guide.
+- You can walk into three houses: a schoolroom, the shield workshop of the family of Cephalus, and a ship captain's house. What they show of daily life is from ancient texts, read in older translations from the Perseus Digital Library: Plato's Protagoras, Lysis, Apology and Phaedrus, Xenophon, Lysias, Aeschines and Aristophanes. The schoolroom follows a cup painted by Douris (Berlin, Antikensammlung F 2285), and the loom follows an oil flask by the Amasis Painter (New York, Metropolitan Museum 31.11.10). The journal names the passage for each claim and lists what is invented.
 - The reciter in the market square recites the whole Iliad in Samuel Butler's translation (1898, public domain).
 - The people are built from the MakeHuman base model (released as CC0), with their clothes draped by cloth simulation in Blender.
 - Built with three.js (MIT licence; see `vendor/THREE-LICENSE.txt`).

@@ -8,6 +8,9 @@ import { runDispute, renderJournal, showDebrief } from './dispute.js';
 import { Cave } from './cave.js';
 import { setupRing, setLook, VISITOR } from './story_ring.js';
 import { setupPoetry } from './story_poetry.js';
+import { setupSchool } from './story_school.js';
+import { setupWorkshop } from './story_workshop.js';
+import { setupHouse } from './story_house.js';
 import { setupCave } from './story_cave.js';
 import { setupEnd } from './story_end.js';
 import { $ } from './util.js';
@@ -40,7 +43,7 @@ function crowdLook(i) {
 }
 
 export const HOMES = {
-  kleio: [-10.5, 6.6, PI], sannion: [-22.5, -17.2, 0.6], archedemos: [5, -93.5, 0], theano: [-12.2, -8.2, 2.2], dromon: [-56.6, 60.4, PI / 2], phanias: [23.6, 3.5, -PI / 2],
+  kleio: [-10.5, 6.6, PI], sannion: [-22.5, -17.2, 0.6], archedemos: [5, -93.5, 0], theano: [13.1, -28.7, -1.75],   /* beside her chair in the schoolroom (layout.js) */ dromon: [-56.6, 60.4, PI / 2], phanias: [23.6, 3.5, -PI / 2],
 };
 
 // ------------------------------------------------------------------ small helpers shared by the chapters
@@ -203,8 +206,37 @@ export async function setup(g) {
   g.addNPC({ id: 'listener2', name: 'A young man', look: crowdLook(13), x: ex.x + 2.4, z: ex.z + 3.0, h: -2.6, pose: 'ground' });
   g.addNPC({ id: 'mika', name: 'Mika', role: 'sells garlands', color: '#6f9a7a', look: LOOKS.mika, x: -62.3, z: 60.4, h: 0, ghost: true, seed: 41 });      // on the pier, west of where the porters set their jars down
   // pupils around Theano
-  g.addNPC({ id: 'pupil1', name: 'A pupil', look: Object.assign(crowdLook(3), { height: 0.6, beard: 'none', hat: 'none', age: 'child' }), x: HOMES.theano[0] + 1.3, z: HOMES.theano[1] + 0.9, h: -2.2, pose: 'ground' });
-  g.addNPC({ id: 'pupil2', name: 'A pupil', look: Object.assign(crowdLook(6), { height: 0.56, beard: 'none', hat: 'none', hairStyle: 'full', age: 'child' }), x: HOMES.theano[0] + 0.2, z: HOMES.theano[1] + 1.7, h: 3.0, pose: 'ground' });
+  g.addNPC({ id: 'pupil1', name: 'A pupil', look: Object.assign(crowdLook(3), { height: 0.6, beard: 'none', hat: 'none', age: 'child' }), x: 11.0, z: -29.38, h: 1.2, pose: 'sit', y: S.school.floor + 0.2 });   // children sit lower than the bench is high
+  g.addNPC({ id: 'pupil2', name: 'A pupil', look: Object.assign(crowdLook(6), { height: 0.56, beard: 'none', hat: 'none', hairStyle: 'full', age: 'child' }), x: 12.05, z: -31.1, h: 2.28 });
+  // The schoolroom (layout.js): one boy writes at the bench and one plays knucklebones on the floor; a lyre master
+  // and a boy play facing each other; and a boy's attendant sits by the door with his staff, as the watching man
+  // does on the cup by Douris (research/notes-school.md).
+  g.npc('pupil1').actor.setActivity('write', { pose: 'sit' }); g.npc('pupil2').actor.setActivity('knuckle');
+  g.addNPC({ id: 'lyremaster', name: 'The lyre master', label: 'Talk to the lyre master', role: 'teaches the lyre', color: '#9a6a3a', look: { skin: 'olive', hair: 0x2a221c, beard: 'full', hairStyle: 'curls', robe: 0xd9c4a3, robe2: 0x8a3b2e, height: 0.98 }, x: 13.4, z: -34.0, h: 0, pose: 'sit' });
+  g.addNPC({ id: 'lyreboy', name: 'A pupil', look: Object.assign(crowdLook(9), { height: 0.62, beard: 'none', hat: 'none', hairStyle: 'curls', age: 'child' }), x: 13.4, z: -32.6, h: PI, pose: 'sit', y: S.school.floor + 0.2 });
+  g.addNPC({ id: 'attendant', name: 'A boy’s attendant', label: 'Talk to the attendant by the door', role: 'a slave who walks a boy to school', color: '#7a7466', look: { skin: 'tan', hair: 0xb8b2a6, beard: 'short', hairStyle: 'receding', dress: 'exomis', length: 'short', robe: 0x9a8a68, age: 'old', height: 0.96 }, x: 9.3, z: -34.3, h: 0.62, pose: 'sit', prop: 'staff', propHand: 'handL' });
+  g.npc('lyremaster').actor.setActivity('lyre', { pose: 'sit' }); g.npc('lyreboy').actor.setActivity('lyre', { pose: 'sit', phase: 1.3 });
+  // The ship captain's house (layout.js): his wife at the loom, their daughter spinning, and a slave woman grinding grain.
+  {
+    const H = S.home, at = (a, b) => { const [x, z] = H.at(a, b); return { x, z }; };
+    g.addNPC(Object.assign({ id: 'wife', name: 'The captain’s wife', label: 'Talk to the captain’s wife', role: 'runs the house while her husband is at sea', color: '#a33b2e', look: { woman: true, skin: 'olive', hair: 0x2a1c14, hairStyle: 'bun', dress: 'peplos', robe: 0xd9c4a3, trim: 0x8a3b2e, height: 0.93, build: 0.9 }, h: PI / 2 }, at(2.4, 0.2)));
+    g.addNPC(Object.assign({ id: 'daughter', name: 'The captain’s daughter', label: 'Talk to the girl', role: 'wants to learn her letters', color: '#d1a23a', look: { woman: true, age: 'child', skin: 'olive', hair: 0x2a1c14, hairStyle: 'bun', robe: 0xd9a93c, height: 0.7, shoes: false }, h: 0.45, pose: 'sit', y: H.floor + 0.14 }, at(-0.3, 1.5)));
+    g.addNPC(Object.assign({ id: 'housemaid', name: 'A slave woman', look: { woman: true, skin: 'tan', hair: 0x15110e, hairStyle: 'bun', dress: 'peplos', robe: 0x9a8a68, height: 0.9, build: 0.95, shoes: false }, h: -0.8 }, at(-2.9, -1.9)));
+    g.npc('wife').actor.setActivity('weave'); g.npc('daughter').actor.setActivity('spin', { pose: 'sit' }); g.npc('housemaid').actor.setActivity('grind');
+  }
+  // The shield workshop (layout.js): a foreman by the door, a bronze-worker at the stump, a man at the bellows, and
+  // two men shaping wooden shield bodies at the benches. All of them are slaves of the house (Lysias 12.8, 12.19).
+  {
+    const W = S.workshop, at = (a, b) => { const [x, z] = W.at(a, b); return { x, z }; };
+    const worker = (n, more) => Object.assign(crowdLook(n), { dress: 'exomis', length: 'short', hat: 'none', robe: [0xb9a57a, 0x9a8a68, 0xa89878, 0x8a7a5a][n % 4], robe2: null }, more);
+    g.addNPC(Object.assign({ id: 'foreman', name: 'The foreman', label: 'Talk to the foreman', role: 'runs the shield workshop', color: '#8a6a3a', look: worker(5, { beard: 'full', hairStyle: 'receding', age: 'old', height: 0.98 }), h: -0.55 }, at(1.4, 2.2)));
+    g.addNPC(Object.assign({ id: 'bronzeworker', name: 'The bronze-worker', label: 'Talk to the bronze-worker', role: 'beats bronze for the shields', color: '#a8733a', look: worker(8, { beard: 'short', skin: 'dark', hairStyle: 'curls', build: 1.1 }), h: PI / 2 }, at(1.2, -1.5)));
+    g.addNPC(Object.assign({ id: 'shopfire', name: 'A workman', look: worker(12, { beard: 'none' }), h: -PI / 2 }, at(5.05, -2.9)));
+    g.addNPC(Object.assign({ id: 'shopwood1', name: 'A workman', look: worker(15, { beard: 'short' }), h: PI }, at(-3.5, -0.25)));
+    g.addNPC(Object.assign({ id: 'shopwood2', name: 'A workman', look: worker(18, { beard: 'full' }), h: 0 }, at(-2.9, 0.95)));
+    g.npc('bronzeworker').actor.setActivity('hammer'); g.npc('shopfire').actor.setActivity('bellows'); g.npc('shopwood1').actor.setActivity('adze'); g.npc('shopwood2').actor.setActivity('chisel', { phase: 0.8 });
+    g.addNPC(Object.assign({ id: 'shieldowner', name: 'The man at the door', role: 'wants his shield and spear back', color: '#8a3b2e', look: Object.assign(crowdLook(21), { beard: 'full', hat: 'none' }), h: PI, hidden: true, mood: 'angry' }, at(0.3, 4.9)));
+  }
   // gate guards and sailors
   g.addNPC({ id: 'guard1', name: 'Gate guard', look: { skin: 'tan', robe: 0x8a3b2e, length: 'short', hat: 'helmet', beard: 'short' }, x: -3.4, z: -76.4, h: 0, prop: 'spear', pose: 'guard' });
   g.addNPC({ id: 'guard2', name: 'Gate guard', look: { skin: 'olive', robe: 0x8a3b2e, length: 'short', hat: 'helmet' }, x: 3.4, z: -76.4, h: 0, prop: 'spear', pose: 'guard' });
@@ -221,7 +253,7 @@ export async function setup(g) {
     ['sailor2', 'He told a story about a ship, too. The crew drug the owner, and they call the real navigator a stargazer.'], ['dromon', 'I’m the one who watches the stars on our ship. I still answer to the crew.'], ['sailor1', 'You answer to the owner, Dromon.'], ['dromon', 'Him as well. That’s the whole idea.']] });
   g.chatter.push({ x: 2, z: 2, r: 12, members: ['crowd4', 'crowd5'], when: (gg) => gg.flags.book1, lines: [
     ['crowd4', 'A city with no poets! What would we do at festivals?'], ['crowd5', 'Sing hymns. He said we could keep the hymns.'], ['crowd4', 'And women training for war alongside the men.'], ['crowd5', 'He said people would laugh at that. He was right about the laughing.']] });
-  g.chatter.push({ x: HOMES.theano[0], z: HOMES.theano[1], r: 9, members: ['theano', 'pupil1', 'pupil2'], lines: [
+  g.chatter.push({ x: 11.5, z: -31, r: 4.4, members: ['theano', 'pupil1', 'pupil2'], lines: [
     ['theano', 'Once more. When the freed man came out of the cave, what could he look at first?'], ['pupil1', 'The sun!'], ['theano', 'No. It was far too bright for him. Shadows first.'], ['pupil2', 'Then reflections in the water.'], ['theano', 'Good. Then real things, then the night sky, and the sun last of all.']] });
   g.chatter.push({ x: 0, z: -78, r: 9, members: ['guard1', 'guard2'], lines: [['guard1', 'He calls his soldiers guardians. Raised like guard dogs: gentle with their own people, fierce with strangers.'], ['guard2', 'And no house, no gold, and no wife of your own.'], ['guard1', 'I’ll keep the pay we’ve got, thanks.']] });
 
@@ -239,7 +271,7 @@ export async function setup(g) {
 
   // ---- chapters
   const api = { gather, meet, relocate, refreshObjective, giveCards, note, joinMika };
-  setupBook1(g, api); setupRing(g, api); setupPoetry(g, api); setupCave(g, api); setupEnd(g, api);
+  setupBook1(g, api); setupRing(g, api); setupPoetry(g, api); setupCave(g, api); setupEnd(g, api); setupSchool(g, api); setupWorkshop(g, api); setupHouse(g, api);
 
   // The readers can be spoken to at any time.
   const later = { dromon: 'Come back when you’ve heard what was said last night. Then we can argue properly.', kleio: 'I’m still going through it one step at a time. Find me when people start disagreeing.', sannion: 'Watch what people do when they lose an argument. You learn more from that than from what they say.', archedemos: 'I’m waiting for the builders. When you’ve heard about the ring, the poets, and the cave, come and find me by the stakes north of the gate.', phanias: 'Buy something, or ask me something. I don’t mind which.', theano: 'When you’ve been up the hill, come and tell me what you made of it.' };

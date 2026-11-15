@@ -54,13 +54,81 @@ export function buildLayout(game) {
 
   // ---- buildings
   const houses = [];   // for the things set out by their doors (props.js)
-  [['warehouse', -72, 30, S], ['warehouse', -50, 30, S], ['house_b', -28, 30.5, S], ['house_a', -16, 31, S], ['house_a', 15.5, 31, S], ['house_b', 27.5, 30.5, S], ['warehouse', 50, 30, S], ['warehouse', 72, 30, S],
+  [['warehouse', -72, 30, S], ['warehouse', -50, 30, S], ['house_b', -28, 30.5, S], ['house_a', -16, 31, S], ['house_b', 27.5, 30.5, S], ['warehouse', 50, 30, S], ['warehouse', 72, 30, S],
     ['house_a', -48, -15, Wd], ['house_b', -50, 3, Wd], ['house_c', -74, -8, E], ['house_a', -92, 6, E], ['house_a', -80, 9.5, S], ['house_b', -93, -18, E],
     ['house_b', 40, 8.5, S], ['house_a', 57, 6.5, S], ['house_c', 80, 2, Wd], ['house_a', 95, 8, Wd], ['house_b', 78, -22, Wd], ['house_a', 94, -30, Wd],
-    ['house_c', -21, -33, N], ['house_a', -17, -57, S], ['house_b', -29, -60, S], ['house_a', -76, -36, E], ['house_b', -77, -58, E], ['house_c', -88, -68, S], ['house_a', -50, -68, S], ['house_a', -36, -71, S], ['house_a', -93, -52, E],
-    ['house_b', 18, -34, N], ['house_a', 31, -35.5, N], ['house_c', 23, -58, S], ['house_a', 44, -36, N], ['house_b', 72, -36, Wd], ['house_a', 71, -57, Wd], ['house_c', 86, -64, S], ['house_a', 42, -66, S], ['house_a', 52, -60, S], ['house_b', 92, -45.5, N]]
+    ['house_c', -21, -33, N], ['house_a', -76, -36, E], ['house_b', -77, -58, E], ['house_c', -88, -68, S], ['house_a', -50, -68, S], ['house_a', -36, -71, S], ['house_a', -93, -52, E],
+    ['house_a', 31, -35.5, N], ['house_c', 23, -58, S], ['house_a', 44, -36, N], ['house_b', 72, -36, Wd], ['house_a', 71, -57, Wd], ['house_c', 86, -64, S], ['house_a', 42, -66, S], ['house_a', 52, -60, S], ['house_b', 92, -45.5, N]]
     .forEach(([id, x, z, r]) => houses.push([id, P(id, x, z, r)]));
   sites.cephalus = P('courtyard_house', -50, -46, E); houses.push(['courtyard_house', sites.cephalus]);
+  // ---- the schoolroom: a house the player can walk into, on the main street just north of the square, where a
+  // two-story house stood. Its door faces west onto the street, so the afternoon sun comes in through it. What is
+  // in the room follows the school scenes on the cup painted by Douris about 480 BC (research/notes-school.md).
+  {
+    const SX = 11.5, SZ = -31, R = Wd, cs = Math.cos(R), sn = Math.sin(R);
+    const sch = sites.school = P('school', SX, SZ, R, { lift: 0.07 }), sy = sch.y;   // lifted clear of the gentle slope it stands on
+    // Room coordinates: a across the room (door wall to the right of center is +, in meters from the middle),
+    // b from the back wall (-) to the door wall (+). at() turns them into map coordinates.
+    sch.at = (a, b) => [SX + a * cs + b * sn, SZ - a * sn + b * cs];
+    sch.floor = sy + 0.05;
+    const local = (x, z) => { const dx = x - SX, dz = z - SZ; return [dx * cs - dz * sn, dx * sn + dz * cs]; };
+    (w.rooms || (w.rooms = [])).push({ name: 'school',
+      inside: (x, z, pad = 0) => { const [a, b] = local(x, z); return Math.abs(a) < 4.1 + pad && Math.abs(b) < 3.2 + pad; },
+      roofY: (x, z) => sy + 4.8 - 0.5 * Math.abs(local(x, z)[1]),
+      // Where the sun lands inside the door: daylight thrown back up into the room from there (game.js, updateFlames).
+      bounce: (() => { const [x, z] = sch.at(-2.0, 1.5); return [x, sy + 0.7, z]; })() });
+    const F = (id, a, b, r = 0, up = 0.05) => { const [x, z] = sch.at(a, b); return P(id, x, z, R + r, { y: sy + up }); };
+    F('stool', -3.3, 2.2);                                  // the attendant's seat by the door
+    F('stool', -3.0, -1.9); F('stool', -1.6, -1.9);         // the lyre lesson
+    F('wall_a', -2.3, -3.19, 0, 1.5);                       // two lyres, two cups, a basket, a flute case
+    F('wall_b', 4.09, 1.75, -PI / 2, 1.3);                  // a scroll, a tablet, a lyre, a sack, the rod
+    F('klismos', 2.9, -2.1, -0.35);                         // the teacher's chair
+    F('school_bench', 1.9, 0.6, -0.35); F('tablet_set', 2.75, 0.91, -0.35, 0.48);
+    F('scroll_bin', 3.55, -2.6); F('bone_basket', -0.4, -0.9); F('hydria', -3.75, 2.9);
+    { const [x, z] = sch.at(1.9, 0.6); w.addBox(x, z, 1.3, 0.19, R - 0.35, 0.5); }
+    { const [x, z] = sch.at(2.9, -2.1); w.addCircle(x, z, 0.3, 0.9); }
+  }
+  // ---- the shield workshop of the family of Cephalus, on the street that leads to his door, where two houses
+  // stood. Lysias says the Thirty listed the slaves at "the factory" and took "seven hundred shields of ours"
+  // (Against Eratosthenes 8 and 19; research/notes-workshop.md). The layout of the room is the game's own.
+  {
+    const SX = -24, SZ = -57.5, R = S, cs = Math.cos(R), sn = Math.sin(R);
+    const shop = sites.workshop = P('workshop', SX, SZ, R, { lift: 0.16 }), sy = shop.y;
+    shop.at = (a, b) => [SX + a * cs + b * sn, SZ - a * sn + b * cs];   // a: west (-) to east (+); b: back wall (-) to the door wall (+)
+    shop.floor = sy + 0.05;
+    const local = (x, z) => { const dx = x - SX, dz = z - SZ; return [dx * cs - dz * sn, dx * sn + dz * cs]; };
+    (w.rooms || (w.rooms = [])).push({ name: 'workshop',
+      inside: (x, z, pad = 0) => { const [a, b] = local(x, z); return Math.abs(a) < 5.7 + pad && Math.abs(b) < 3.7 + pad; },
+      roofY: (x, z) => sy + 5.2 - 0.5 * Math.abs(local(x, z)[1]),
+      bounce: (() => { const [x, z] = shop.at(-2.2, -1.1); return [x, sy + 0.7, z]; })() });   // where the sun from the west window lands
+    const F = (id, a, b, r = 0, up = 0.05) => { const [x, z] = shop.at(a, b); return P(id, x, z, R + r, { y: sy + up }); };
+    shop.forge = F('forge', 3.5, -3.05); F('stump_anvil', 2.0, -1.5);
+    F('workbench', -3.2, -1.0); F('workbench', -3.2, 1.7);
+    F('shield_stack', -5.05, -2.95); F('shield_stack', -5.0, 2.95, 0.6); F('shield_stack', 5.0, 2.9, 1.1);
+    for (let k = 0; k < 6; k++) F('shield', -4.4 + k * 1.1, -3.66, 0, 1.12);          // finished shields on the rail
+    F('shield', -2.3, 4.13, 0, 0.02); F('shield', 2.35, 4.13, 0, 0.02);               // two by the door, as the shop's sign
+    F('crate_stack', 4.9, 1.2, 0.3); F('amphora', 5.2, -0.6); F('hydria', 1.0, -3.2); F('stool', 3.4, 3.1);
+  }
+  // ---- the ship captain's house: an ordinary family's house, on the main street between the harbor and the
+  // square, where a one-room house stood. It is the same building as the schoolroom, furnished as a home: a loom,
+  // wool, the year's stores, a hearth (research/notes-house.md).
+  {
+    const SX = 11.5, SZ = 31, R = Wd, cs = Math.cos(R), sn = Math.sin(R);
+    const home = sites.home = P('school', SX, SZ, R, { lift: 0.1 }), sy = home.y;
+    home.at = (a, b) => [SX + a * cs + b * sn, SZ - a * sn + b * cs];   // as for the schoolroom
+    home.floor = sy + 0.05;
+    const local = (x, z) => { const dx = x - SX, dz = z - SZ; return [dx * cs - dz * sn, dx * sn + dz * cs]; };
+    (w.rooms || (w.rooms = [])).push({ name: 'home',
+      inside: (x, z, pad = 0) => { const [a, b] = local(x, z); return Math.abs(a) < 4.1 + pad && Math.abs(b) < 3.2 + pad; },
+      roofY: (x, z) => sy + 4.8 - 0.5 * Math.abs(local(x, z)[1]),
+      bounce: (() => { const [x, z] = home.at(-2.0, 1.5); return [x, sy + 0.7, z]; })() });
+    const F = (id, a, b, r = 0, up = 0.05) => { const [x, z] = home.at(a, b); return P(id, x, z, R + r, { y: sy + up }); };
+    F('loom', 2.4, -0.55); F('wool_basket', 3.45, 0.35); F('stool', -0.3, 1.5);
+    home.hearth = F('brazier', -0.8, -2.6);
+    F('pithos', 3.45, -2.55); F('pithos', 2.3, -2.7); F('amphora', 1.35, -2.8); F('amphora', 0.9, -2.75); F('chest', 3.6, 2.45, -PI / 2);
+    F('couch', -3.55, 0.3); F('table_low', -2.4, 1.2); F('hydria', -3.7, 2.8); F('basket_figs', -2.4, 1.2, 0, 0.45);
+    { const [x, z] = home.at(-2.45, -1.45); P('rock_a', x, z, 0.7, { y: sy + 0.02, scale: 0.32, noCollide: true }); }   // the lower grindstone
+  }
   sites.stoa = P('stoa', -33.5, -4, E);
   sites.shrine = P('shrine', 45, -6, Wd);
   sites.statue = P('statue_goddess', 31.5, -6, Wd);
@@ -87,7 +155,7 @@ export function buildLayout(game) {
 
   // ---- town trees
   [['olive_a', -20, -17.5, 0.4], ['olive_b', 54, -18, 2], ['cypress_a', 40, -13.5, 0], ['cypress_a', 40, 1.5, 1], ['cypress_b', 52.6, -13, 2], ['pine_a', 92, 40, 0.6], ['pine_a', -96, 38, 2.2], ['olive_b', -62, -24, 1.1],
-    ['olive_a', 8, -64, 2.6], ['cypress_b', -9, -72, 0], ['cypress_b', 9, -72, 0], ['olive_a', -92, -8, 0.2], ['olive_b', 96, -62, 1.4], ['bush_b', -40.5, -38.5, 0], ['bush_b', -40.6, -53.6, 1], ['bush_a', 12, 33, 0], ['olive_b', 62, 22, 0.5], ['olive_a', -64, 22.5, 1.9]]
+    ['olive_a', 8, -64, 2.6], ['cypress_b', -9, -72, 0], ['cypress_b', 9, -72, 0], ['olive_a', -92, -8, 0.2], ['olive_b', 96, -62, 1.4], ['bush_b', -40.5, -38.5, 0], ['bush_b', -40.6, -53.6, 1], ['olive_b', 62, 22, 0.5], ['olive_a', -64, 22.5, 1.9]]
     .forEach(([id, x, z, r]) => P(id, x, z, r));
 
   // ---- north: road, exedra, cave mouth, city site
@@ -156,10 +224,16 @@ export function buildLayout(game) {
   dressTown(kit, w, houses, [sites.stallA, sites.stallB, sites.stallC, stallD]);   // doorways and market (props.js)
   kit.build();
   // Flames get a glow and a share of the night lights.
-  for (const f of sites.flames) { const a = f.anchor('flame'); game.addFlame(a.x, f.id === 'brazier' ? f.y + 1.2 : f.y + 2.5, a.z, f.id === 'brazier' ? { power: 34 } : { power: 22, base: f.y + 2.3, smoke: 0.6 }); }
+  for (const f of sites.flames) {
+    const a = f.anchor('flame');
+    game.addFlame(a.x, f.id === 'brazier' ? f.y + 1.2 : f.y + 2.5, a.z, f.id === 'brazier' ? { power: 34 } : { power: 22, base: f.y + 2.3, smoke: 0.6 });
+  }
+  if (sites.home) { const h = sites.home.hearth, a = h.anchor('flame'); game.addFlame(a.x, h.y + 1.2, a.z, { power: 12, always: true, size: 1.1 }); }   // the house's hearth
+  // The workshop's hearth burns by day as well as by night.
+  if (sites.workshop) { const a = sites.workshop.forge.anchor('flame'); game.addFlame(a.x, a.y + 0.2, a.z, { power: 16, base: a.y - 0.04, always: true, size: 1.2 }); }
   kit.zone('lydia').visible = false;
 
-  game.mapLabels = [{ text: 'Harbor', x: 0, z: 47 }, { text: 'Agora', x: 0, z: -4 }, { text: 'House of Cephalus', x: -50, z: -60 }, { text: 'Shrine of Bendis', x: 52, z: 6 }, { text: 'North gate', x: 0, z: -88 },
+  game.mapLabels = [{ text: 'Harbor', x: 0, z: 47 }, { text: 'Agora', x: 0, z: -4 }, { text: 'House of Cephalus', x: -50, z: -60 }, { text: 'Shrine of Bendis', x: 52, z: 6 }, { text: 'Schoolroom', x: 17, z: -31 }, { text: 'Shield workshop', x: -24, z: -64 }, { text: 'Ship captain’s house', x: 18, z: 31 }, { text: 'North gate', x: 0, z: -88 },
     { text: 'Cave hill', x: -40, z: -246 }, { text: 'Stone seat', x: -14, z: -206 }, { text: 'Site of the city in speech', x: 130, z: -182 },
     { text: 'Shepherd’s hut', x: lyd[0] - 6, z: lyd[1] - 26, lydia: true }, { text: 'The king’s hall', x: lyd[0] - 28, z: lyd[1] + 36, lydia: true }, { text: 'Pasture', x: lyd[0] + 26, z: lyd[1] - 24, lydia: true }];
   return sites;

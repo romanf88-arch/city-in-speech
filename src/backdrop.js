@@ -39,13 +39,31 @@ varying vec3 vTint;
 varying vec3 vN;
 uniform sampler2D uAlb, uNrm;
 uniform vec3 uLight, uHemi, uHemiGnd;
+uniform vec4 uOff, uCloud;                               // the sky's cloud drift and cover (world.js CLOUD_GLSL)
+uniform float uPaint;                                    // 1 the painted look, 0 the plain one (for comparing)
 ${HAZE_GLSL}
 ${GROUND_GLSL}
+// Shadows of the low clouds: the sun's ray from this point meets the cloud layer, here taken as a plane 1.6 km up,
+// and reads the same cloud pattern, drift, and cover as the sky (cloudField in world.js), so the shadows move
+// with the wind and come and go with the weather.
+float cloudShadow(vec3 P) {
+  vec3 L = uSunDir; float t = max(1600.0 - P.y, 0.0) / max(L.y, 0.08);
+  vec2 p = (P.xz + L.xz * t) / 1600.0;
+  vec2 q = p * 0.42 + uOff.xy;
+  float big = texture2D(uGNoise, p * 0.055 + uOff.zw * 0.7 + 0.13).r;
+  float shape = texture2D(uGNoise, q).r * 0.74 + big * 0.42 - 0.08;
+  float thr = mix(0.88, 0.16, uCloud.x);
+  return smoothstep(thr - 0.06, thr + 0.26, shape);
+}
 void main() {
   if (vW.y < 0.0) discard;                               // under water: the sea is drawn by the sky dome
   vec2 uv = (vW.xz + ${HALF.toFixed(1)}) / ${(HALF * 2).toFixed(1)};
+  // Farther ranges are painted a little more simply: the relief picture is read from a coarser level beyond
+  // 2.5 km (half a level each time the distance doubles, at most one and a half).
+  float dist = length(vW - cameraPosition);
+  float simp = clamp(0.5 * log2(max(dist, 1.0) / 2500.0), 0.0, 1.5) * uPaint;
   vec3 alb = texture2D(uAlb, uv).rgb;
-  vec3 nt = texture2D(uNrm, uv).rgb;
+  vec3 nt = texture2D(uNrm, uv, simp).rgb;
   // Surface normal from the baked picture, with the relief pushed a little.
   vec2 nxz = (nt.xy * 2.0 - 1.0) * 1.2;
   vec3 N = normalize(vec3(nxz.x, sqrt(max(1.0 - dot(nxz, nxz), 0.05)), nxz.y));
@@ -60,9 +78,22 @@ void main() {
     alb = mix(alb, ga, vNear);
     shelter = mix(shelter, 1.0, vNear);
   }
-  // Same light model as the town's ground: sun plus sky light.
+  // Same light model as the town's ground: sun plus sky light. Out on the far land, as in a landscape painting:
+  // cloud shadows pass over it, the shade is a little cooler than the light, and each farther range takes on
+  // more of the sky's own color (blue by day, rose at dusk) before the haze.
+  // A painter groups the light into a few masses: faces turned to the sun are lit nearly evenly, faces turned
+  // away are in shade, with a short soft step between. Shade is cooler and violet, light a little warmer.
+  float far = (1.0 - vNear) * uPaint;
+  float nl = max(dot(N, uSunDir), 0.0);
+  float sunK = mix(nl, 0.15 + 0.85 * smoothstep(0.02, 0.42, dot(N, uSunDir)), far * 0.75);
+  sunK *= 1.0 - 0.68 * cloudShadow(vW) * far;
   vec3 hemi = mix(uHemiGnd, uHemi, N.y * 0.5 + 0.5);
-  vec3 col = alb * (uLight * max(dot(N, uSunDir), 0.0) * mix(1.0, shelter, 0.5) + hemi * shelter) * 0.3183;
+  float shade = far * (1.0 - smoothstep(0.0, 0.45, sunK));
+  hemi *= mix(vec3(1.0), vec3(0.84, 0.88, 1.16), shade);
+  vec3 sunC = uLight * mix(vec3(1.0), vec3(1.06, 1.0, 0.9), far);
+  vec3 col = alb * (sunC * sunK * mix(1.0, shelter, 0.5) + hemi * shelter) * 0.3183;
+  float air = (1.0 - exp(-max(dist - 900.0, 0.0) / 11000.0)) * far;
+  col = mix(col, uHemi * 0.3183 * 1.05, air * 0.45);
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -101,11 +132,15 @@ export class Backdrop {
       uLight: { value: new THREE.Color() }, uHemi: { value: new THREE.Color() }, uHemiGnd: { value: new THREE.Color() },
       uFog: { value: new THREE.Color() }, uHzSun: { value: new THREE.Color() }, uHzAnti: { value: new THREE.Color() },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uFogP: { value: new THREE.Vector3(90, 430, 1) },
+      uOff: { value: new THREE.Vector4() }, uCloud: { value: new THREE.Vector4() }, uPaint: { value: 1 },
     };
     this.mat = new THREE.ShaderMaterial({ uniforms: this.uniforms, vertexShader: VERT, fragmentShader: FRAG, fog: false });
     // Resolves when the pictures are in and the mesh is built. Until then the group is empty.
-    this.ready = Promise.all([heights, tex('bd_albedo.jpg', true), tex('bd_normal.jpg', false)]).then(([h, alb, nrm]) => {
-      this.uniforms.uAlb.value = alb; this.uniforms.uNrm.value = nrm;
+    // The color picture as painted by tools/paint_backdrop.py; ?paint=0 in the address shows the plain bake.
+    const painted = !/[?&]paint=0/.test((typeof location !== 'undefined' && location.search) || '');
+    this.ready = Promise.all([heights, tex(painted ? 'bd_paint.jpg' : 'bd_albedo.jpg', true), tex('bd_normal.jpg', false)]).then(([h, alb, nrm]) => {
+      this.uniforms.uAlb.value = alb; this.uniforms.uNrm.value = nrm; this.uniforms.uPaint.value = painted ? 1 : 0;
+      this.tex = tex;   // kept for the comparison tool (dev/hills.js), which loads the other picture
       this.build(h);
       this.loaded = true;
       return this;
@@ -222,5 +257,6 @@ export class Backdrop {
     u.uLight.value = s.uLight.value; u.uHemi.value = s.uHemi.value; u.uHemiGnd.value = s.uHemiGnd.value;
     u.uFog.value = s.uFog.value; u.uHzSun.value = s.uHzSun.value; u.uHzAnti.value = s.uHzAnti.value;
     u.uSunDir.value = s.uSunDir.value; u.uFogP.value = s.uFogP.value;
+    u.uOff.value = s.uOff.value; u.uCloud.value = s.uCloud.value;
   }
 }

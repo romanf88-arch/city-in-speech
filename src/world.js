@@ -221,6 +221,9 @@ export class World {
     this.floors.push({ x, z, hx, hz, y, ramp, cos: Math.cos(rot), sin: Math.sin(rot), reach: Math.hypot(hx, hz) + ramp + 0.5 });
   }
 
+  // Rooms the player can walk into: [{ name, inside(x, z, pad), roofY(x, z) }] (layout.js adds them).
+  indoor(x, z, pad = 0) { if (this.rooms) for (const r of this.rooms) if (r.inside(x, z, pad)) return r; return null; }
+
   // ----- collision -----
   addCircle(x, z, r, h = 3) { this._insert({ t: 0, x, z, r, h, reach: r }); }
   addBox(x, z, hx, hz, rot = 0, h = 4) {
@@ -488,6 +491,8 @@ export class Sea {
       uFog: col(0xbcd3e2), uHzSun: col(0xbcd3e2), uHzAnti: col(0xbcd3e2), uSunDir: { value: new THREE.Vector3(0.45, 0.8, -0.4).normalize() }, uFogP: { value: new THREE.Vector3(90, 430, 1) },
       uMisc: { value: new THREE.Vector4(0, 0, 1, 0) }, uNoise: { value: noise }, uNoise2: { value: noise2 },
       uShore: { value: null }, uShoreBox: { value: new THREE.Vector4(SHORE.x0, SHORE.z0, 1 / SHORE.w, 1 / SHORE.h) },
+      // the clouds it mirrors (shared with the sky by link())
+      uCloud: { value: new THREE.Vector4(0.3, 0.3, 0, 0) }, uOff: { value: new THREE.Vector4() }, uCl: col(0xfff0da), uCs: col(0x8c96b2),
     };
     // Drawn after the solid things and before the sky, and blended, so the seabed shows through the shallows.
     this.mat = new THREE.ShaderMaterial({
@@ -527,7 +532,7 @@ export class Sea {
   // Share the sky's light and color values, so this sheet and the far water always agree.
   link(sky) {
     this.sky = sky;
-    for (const k of ['uTop', 'uBot', 'uAnti', 'uGlow', 'uLight', 'uHemi', 'uFog', 'uHzSun', 'uHzAnti', 'uSunDir', 'uFogP', 'uMisc']) this.u[k] = sky.u[k];
+    for (const k of ['uTop', 'uBot', 'uAnti', 'uGlow', 'uLight', 'uHemi', 'uFog', 'uHzSun', 'uHzAnti', 'uSunDir', 'uFogP', 'uMisc', 'uCloud', 'uOff', 'uCl', 'uCs']) this.u[k] = sky.u[k];
   }
   update(dt) { this.t += dt; if (!this.sky) this.u.uMisc.value.w = this.t; }
   // A dark, wet band on the stone where the water meets the quay and pier walls: dark and greenish at the
@@ -658,7 +663,21 @@ vec3 seaColorN(vec3 P, vec3 d, float depth, vec3 nG) {
   vec3 lightIn = (uLight * max(uSunDir.y, 0.0) + uHemi) * 0.3183;
   vec3 deep = uSea * lightIn * 0.78;
   vec3 shallow = (uSea * 0.5 + vec3(0.07, 0.29, 0.27)) * lightIn * 1.15;
-  vec3 col = mix(mix(shallow, deep, 1.0 - exp(-depth * 1.1)), atmosphere(r, dot(r, uSunDir)), F);
+  // The sky it mirrors, clouds and all: the same cloud pattern as the sky dome along the reflected direction,
+  // lit a little more simply (added 2026-11-15; before, the water mirrored only the clear sky).
+  vec3 sky = atmosphere(r, dot(r, uSunDir));
+  // The clouds are looked up through a smoother surface (the swell and a fifth of the ripples), so a cloud is
+  // smeared into soft streaks the way rippled water smears it, not broken into spots, and they blend in gently.
+  { vec3 ns = normalize(vec3(w.x * 0.1 + nG.x / max(nG.y, 0.2), 1.0, w.y * 0.1 + nG.z / max(nG.y, 0.2)));
+    vec3 rc = reflect(d, ns); rc.y = abs(rc.y) * 0.8 + 0.06; rc = normalize(rc);
+    // The low clouds only, read the same way as cloudField (world.js) but from two pictures instead of four:
+    // the thin high cloud hardly shows in water, and the sea covers much of the screen at the harbor.
+    vec2 cp = rc.xz / (rc.y + 0.10);
+    float rb = texture2D(uNoise, cp * 0.42 + uOff.xy).r, big = texture2D(uNoise, cp * 0.055 + uOff.zw * 0.7 + 0.13).r;
+    float thr = mix(0.88, 0.16, uCloud.x);
+    float low = smoothstep(thr, thr + 0.2, rb * 0.74 + big * 0.42 - 0.08) * smoothstep(0.0, 0.11, rc.y);
+    sky = mix(sky, mix(uCs, uCl, clamp(0.55 + (rb - 0.35) * 1.2, 0.0, 1.0)), low * 0.6); }
+  vec3 col = mix(mix(shallow, deep, 1.0 - exp(-depth * 1.1)), sky, F);
   // Glitter: a tall narrow streak of broken light under the sun or moon.
   vec3 rs = normalize(vec3(d.x, mix(-d.y, uSunDir.y, 0.8), d.z) + vec3(w.x, 0.0, w.y) * 0.16);
   col += uGlow * uMisc.z * pow(max(dot(rs, uSunDir), 0.0), 260.0) * 2.5;
@@ -676,9 +695,11 @@ void main() {
   float t = uMisc.w, fade = 1.0 - smoothstep(160.0, 300.0, length(wp.xz - vec2(0.0, 70.0)));
   vec3 p = wp.xyz, n = vec3(0.0, 1.0, 0.0);
   // direction x, direction z, wavelength (m), height (m)
-  vec4 W[4]; W[0] = vec4(0.8, 0.6, 7.0, 0.07); W[1] = vec4(-0.28, 0.96, 5.5, 0.045); W[2] = vec4(0.95, -0.31, 11.0, 0.085); W[3] = vec4(0.45, 0.89, 17.0, 0.06);
+  // (Heights were 4.5 to 8.5 cm until 2026-11-15, which read as ripples rather than waves; now about 1.8 times
+  // that, with a fifth, longer swell from the open gulf.)
+  vec4 W[5]; W[0] = vec4(0.8, 0.6, 7.0, 0.12); W[1] = vec4(-0.28, 0.96, 5.5, 0.08); W[2] = vec4(0.95, -0.31, 11.0, 0.15); W[3] = vec4(0.45, 0.89, 17.0, 0.11); W[4] = vec4(0.2, 0.98, 27.0, 0.13);
   float h = 0.0;
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 5; i++) {
     vec2 D = normalize(W[i].xy); float k = 6.2832 / W[i].z, c = sqrt(9.8 / k), a = W[i].w * fade, Q = 0.55;
     float f = k * (dot(D, wp.xz) - c * t * 0.8) + float(i) * 1.7;
     p.xz += Q * a * D * cos(f); p.y += a * sin(f); h += a * sin(f);
@@ -689,9 +710,10 @@ void main() {
 }`;
 const SEA_FRAG = /* glsl */`
 varying vec3 vW; varying vec3 vN; varying float vCrest;
-uniform vec3 uTop, uBot, uAnti, uGlow, uSea, uLight, uHemi;
+uniform vec3 uTop, uBot, uAnti, uGlow, uSea, uLight, uHemi, uCl, uCs;
 uniform vec4 uMisc, uShoreBox;
-uniform sampler2D uNoise, uNoise2, uShore;
+uniform sampler2D uNoise2, uShore;
+${CLOUD_GLSL}
 ${HAZE_GLSL}
 ${ATMOS_GLSL}
 ${SEA_GLSL}
@@ -708,12 +730,26 @@ void main() {
   vec3 lightIn0 = (uLight * max(uSunDir.y, 0.0) + uHemi) * 0.3183;
   float Fw = 0.03 + 0.97 * pow(1.0 - max(dot(-d, vN), 0.0), 5.0);
   col = mix(col, vec3(0.30, 0.27, 0.22) * lightIn0, nearWall * clamp(Fw * 1.6 + 0.25, 0.0, 0.75));
-  // Light through the crests, toward the sun.
-  col += vec3(0.04, 0.12, 0.10) * lightIn0 * smoothstep(0.03, 0.16, vCrest) * pow(max(dot(normalize(vec3(d.x, 0.0, d.z)), normalize(vec3(uSunDir.x, 0.0, uSunDir.z))), 0.0), 2.0);
+  // Light through the crests, toward the sun: green-blue where the wave is thin.
+  col += vec3(0.05, 0.17, 0.14) * lightIn0 * smoothstep(0.05, 0.3, vCrest) * pow(max(dot(normalize(vec3(d.x, 0.0, d.z)), normalize(vec3(uSunDir.x, 0.0, uSunDir.z))), 0.0), 2.0) * 1.4;
   // Foam where the water is very shallow, lapping in and out.
   float fn = texture2D(uNoise, vW.xz * 0.09 + vec2(0.017, -0.012) * uMisc.w).g;
   float lap = 0.5 + 0.5 * sin(depth * 6.0 - uMisc.w * 1.2 + fn * 5.0);
   float foam = smoothstep(1.1, 0.1, depth + (fn - 0.5) * 0.7) * (0.45 + 0.55 * lap);
+  // Froth along the quay and pier walls, in patches that drift and come and go as the swell slaps the stone.
+  // Two finer layers multiplied, so the froth breaks into thin threads rather than blotches, and only within
+  // about a meter of the stone.
+  if (wall > 0.3) {   // only within a few meters of stone; the open water skips all of this
+    float fw = texture2D(uNoise, vW.xz * 0.62 + vec2(-0.05, 0.035) * uMisc.w).g * texture2D(uNoise, vW.zx * 0.37 - vec2(0.02, 0.04) * uMisc.w).g;
+    float slap = 0.5 + 0.5 * sin(uMisc.w * 1.6 + vW.x * 0.35 + vW.z * 0.21);
+    vec2 s1 = vec2(1.1) * uShoreBox.zw;   // stone within about a meter
+    float wall1 = max(max(texture2D(uShore, sb + vec2(s1.x, 0.0)).r, texture2D(uShore, sb - vec2(s1.x, 0.0)).r),
+                      max(texture2D(uShore, sb + vec2(0.0, s1.y)).r, texture2D(uShore, sb - vec2(0.0, s1.y)).r)) * 8.0 - 6.0;
+    foam = max(foam, smoothstep(0.6, 1.6, wall1) * smoothstep(-0.3, -1.5, bed) * smoothstep(0.24, 0.44, fw + slap * 0.12) * 0.35);
+  }
+  // A few whitecaps where the highest crests meet, out in the open water.
+  float cap = smoothstep(0.32, 0.48, vCrest) * smoothstep(0.55, 0.8, texture2D(uNoise, vW.xz * 0.05 + vec2(0.01, 0.02) * uMisc.w).g);
+  foam = max(foam, cap * 0.6);
   col = mix(col, vec3(0.92, 0.95, 0.95) * (uLight * max(uSunDir.y, 0.0) + uHemi) * 0.3183, foam * 0.6);
   float alpha = max(1.0 - 0.92 * exp(-depth * 1.5), foam * 0.9);
   gl_FragColor = vec4(col, alpha);
@@ -1009,8 +1045,11 @@ export class Sky {
     u.uCloud.value.set(c.cov, c.cir, 0, 0);
     this.stars.visible = c.stars > 0.01;
     this.sun.color.copy(c.sun); this.sun.intensity = c.sunI; this.sun.castShadow = c.sunI > 0.05;
-    this.hemi.color.copy(c.hemiSky); this.hemi.groundColor.copy(c.hemiGnd); this.hemi.intensity = c.hemiI;
+    // Indoors (this.indoor, 0 to 1, set by the game) less of the sky's light reaches anything, and the eye opens up:
+    // the room stays readable and the street seen through the door goes bright.
+    const ind = this.indoor || 0;
+    this.hemi.color.copy(c.hemiSky); this.hemi.groundColor.copy(c.hemiGnd); this.hemi.intensity = c.hemiI * (1 - 0.5 * ind);
     this.scene.fog.color.copy(c.fog); this.scene.fog.near = c.fogN; this.scene.fog.far = c.fogF;
-    this.renderer.toneMappingExposure = c.exp;
+    this.renderer.toneMappingExposure = c.exp * (1 + 0.3 * ind);
   }
 }
