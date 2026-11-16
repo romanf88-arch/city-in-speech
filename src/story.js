@@ -376,12 +376,15 @@ function setupBook1(g, api) {
     await gg.ui.fade(1, 0.7);
     gg.busyEnv = true; gg.env('night', 0); gg.ui.memory(label);
     soc.put(seat0[0], seat0[1], Math.atan2(C.x - 1.5 - seat0[0], C.z - seat0[1]), 'sit'); mika.show(false);
-    gg.player.place(watch[0], watch[1], PI * 0.97); gg.cam.yaw = gg.player.heading; gg.snapCam = true;
+    gg.player.place(watch[0], watch[1], PI * 0.97); gg.cam.yaw = gg.player.heading; gg.snapCam = true; gg.frameOn(soc.actor);   // the view is on Socrates when the picture fades in
     await gg.ui.fade(0, 0.9);
     try { await fn(); } finally {
       await gg.ui.fade(1, 0.7);
       gg.ui.memory(null); gg.env(envWas || 'afternoon', 0); gg.busyEnv = false;
       soc.put(was.x, was.z, was.h, 'sit');
+      // The view is already on the person telling the story when the picture fades back in. It used to fly there
+      // across the courtyard after the fade (Roman, 2026-11-15).
+      if (gg.memoryTeller && gg.npc(gg.memoryTeller)) gg.frameOn(gg.npc(gg.memoryTeller).actor);
       if (gg.flags.mikaWith) { mika.show(true); mika.put(watch[0] + 1.2, watch[1] + 0.8, PI); }
       await gg.ui.fade(0, 0.7);
     }
@@ -401,7 +404,7 @@ function setupBook1(g, api) {
     api.giveCards(gg, ['persuade']);
     await gg.say('', 'You make a note of that. Whenever you hear something that was said last night, a short version goes into your journal. Press J to read it at any time.');
     gg.flags.atHouse = true; gg.ui.area('The first hour', 'Three answers to one question'); api.refreshObjective(gg);
-    pol.moveTo(C.x + 2.6, C.z + 1.8, 1.6, -PI / 2);
+    (async () => { await pol.moveTo(C.x + 9.5, C.z + 0.5, 1.6); await pol.moveTo(C.x + 4.0, C.z + 0.5, 1.6); await pol.moveTo(C.x + 2.6, C.z + 1.8, 1.6, -PI / 2); })();   // in by the doorway (2 m wide, on the house's center line), then to his place: a straight line took him through the wall beside the door
   } });
 
   // Inside: the owner of the purse is complaining about it.
@@ -426,6 +429,7 @@ function setupBook1(g, api) {
       ['cephalus', 'Welcome, welcome. Sit with me. The older I get, the less I care about food and wine, and the more I like a good talk.', 'happy'],
       ['cephalus', 'You want to know how it started last night? It started with me. And my part was over very quickly.', 'laugh'],
       ['cephalus', 'Socrates sat on that stool, there. I’ll tell it the way it happened. Picture yourself in the room with us.']]);
+    gg.memoryTeller = 'cephalus';
     await remember(gg, 'Last night, as Cephalus tells it', async () => {
       await gg.lines([
         ['socrates', 'Cephalus, may I ask you something? You’re a rich man. What is the best thing your money has done for you?', { to: 'cephalus', mood: 'happy' }],
@@ -435,12 +439,12 @@ function setupBook1(g, api) {
         ['cephalus', 'I’d say so, yes.', { to: 'socrates' }],
         ['socrates', 'Let me try an example. Suppose a friend lends you his sword while he is in his right mind.', { to: 'cephalus' }],
         ['socrates', 'Later he goes mad. He turns up at your door in a rage and asks for his sword back.', { to: 'cephalus' }],
-        ['socrates', 'You, our guest. What do you think? Should he hand it over?', { mood: 'happy' }]]);
-      const c = await gg.choose(['No. He might hurt someone.', 'Yes. It’s his sword.'], { prompt: 'A friend who has gone mad asks for his sword back. Should you give it to him?', name: 'Socrates' });
+        ['', 'Cephalus stops the story there and turns to you.'], ['cephalus', 'What would you have told him? Should the man hand the sword over?', { mood: 'happy' }]]);
+      const c = await gg.choose(['No. He might hurt someone.', 'Yes. It’s his sword.'], { prompt: 'A friend who has gone mad asks for his sword back. Should you give it to him?', name: 'Cephalus' });
       gg.log.push({ t: 'attempt', skill: 'counterexample', correct: c === 0 });
-      if (c === 1) { await gg.say('socrates', 'It is his. And suppose he runs his neighbor through with it ten minutes later. Did you do the right thing by handing it over?', { mood: 'think' }); await gg.choose(['No. I suppose not.']); }
+      if (c === 1) { await gg.say('cephalus', 'It is his. I wanted to say that too. But suppose he runs his neighbor through with it ten minutes later. Did you do the right thing by handing it over?', { mood: 'think' }); await gg.choose(['No. I suppose not.']); }
       await gg.lines([
-        ['socrates', 'I think everyone would agree with you.', 'happy'],
+        ['cephalus', 'That is what I told him, and nobody in the room disagreed.', 'happy'],
         ['socrates', 'But giving it back is exactly what the rule tells you to do. “Give back what you owe.” So the rule can’t be the whole story of what doing right is.', { to: 'cephalus', mood: 'think' }],
         ['cephalus', 'Well. I have a sacrifice to see to. My son can take over my side of the argument. He gets everything else of mine in the end.', { to: 'socrates', mood: 'laugh' }]]);
     });
@@ -461,6 +465,7 @@ function setupBook1(g, api) {
     await gg.lines([
       ['polemarchus', 'So I took over from my father. I thought I had a better answer than his.', 'happy'],
       ['polemarchus', 'I’ll tell you how it went. I’m afraid I don’t come out of it very well.', 'laugh']]);
+    gg.memoryTeller = 'polemarchus';
     await remember(gg, 'Last night, as Polemarchus tells it', async () => {
       await gg.lines([
         ['polemarchus', 'I’ll stand up for my father. The poet Simonides had it right: doing right means giving everyone what they are owed.', { to: 'socrates' }],
@@ -470,17 +475,17 @@ function setupBook1(g, api) {
         ['polemarchus', 'Exactly.', { to: 'socrates', mood: 'happy' }],
         ['socrates', 'Tell me, do you ever get people wrong? Think someone is a good friend, and then find out he’s a crook?', { to: 'polemarchus', mood: 'think' }],
         ['polemarchus', 'Of course. It happens all the time.', { to: 'socrates' }],
-        ['socrates', 'Then here is a question for our guest. Suppose he follows his rule on a day when he has got someone wrong. Who gets helped, and who gets hurt?', { mood: 'happy' }]]);
-      const c = await gg.choose(['He helps a bad person and hurts a good one.', 'He still helps his friends, so no harm is done.'], { prompt: 'Polemarchus helps his friends and hurts his enemies. Today he is wrong about who is who. What happens?', name: 'Socrates' });
+        ['socrates', 'Suppose you follow your rule on a day when you have got someone wrong. Who gets helped, and who gets hurt?', { to: 'polemarchus', mood: 'think' }], ['', 'Polemarchus stops the story there and turns to you.'], ['polemarchus', 'You answer it. I’d like to know whether you would have done better than I did.', { mood: 'happy' }]]);
+      const c = await gg.choose(['He helps a bad person and hurts a good one.', 'He still helps his friends, so no harm is done.'], { prompt: 'Polemarchus helps his friends and hurts his enemies. Today he is wrong about who is who. What happens?', name: 'Polemarchus' });
       gg.log.push({ t: 'attempt', skill: 'counterexample', correct: c === 0 });
-      if (c === 1) { await gg.say('socrates', 'He helps the people he thinks are his friends. But one of them is a crook, and he hasn’t found that out yet. So who is he really helping?', { mood: 'think' }); await gg.choose(['A bad person.']); }
+      if (c === 1) { await gg.say('polemarchus', 'I tried that answer myself. Socrates said: you help the people you think are your friends, but one of them is a crook and you haven’t found that out yet. So who are you really helping?', { mood: 'think' }); await gg.choose(['A bad person.']); }
       await gg.lines([
         ['polemarchus', 'All right, then I’ll fix it. Help the friend who really is good. Hurt the enemy who really is bad.', { to: 'socrates' }],
         ['socrates', 'That’s better. Now another question. When you really hurt a horse, does it become a better horse or a worse one?', { to: 'polemarchus', mood: 'think' }],
         ['polemarchus', 'A worse one.', { to: 'socrates' }],
-        ['socrates', 'And our guest: when a person is really harmed, does he come out of it a better person or a worse one?', { mood: 'happy' }]]);
-      const h = await gg.choose(['A worse one.', 'A better one, if it teaches him a lesson.'], { prompt: 'When someone is really harmed, do they become a better person or a worse one?', name: 'Socrates' });
-      if (h === 1) await gg.say('socrates', 'Teaching someone a lesson is meant to do him good. I’m asking about real harm, the kind that damages a person.', { mood: 'think' });
+        ['socrates', 'And when a person is really harmed, does he come out of it a better person or a worse one?', { to: 'polemarchus', mood: 'think' }], ['polemarchus', 'What would you have said?', { mood: 'happy' }]]);
+      const h = await gg.choose(['A worse one.', 'A better one, if it teaches him a lesson.'], { prompt: 'When someone is really harmed, do they become a better person or a worse one?', name: 'Polemarchus' });
+      if (h === 1) await gg.say('polemarchus', 'Socrates had an answer for that. Teaching someone a lesson is meant to do him good. He was asking about real harm, the kind that damages a person.', { mood: 'think' });
       await gg.lines([
         ['polemarchus', 'Worse. He’d come out of it worse.', { to: 'socrates', mood: 'think' }],
         ['socrates', 'So a good person, by doing what’s right, would be turning other people into worse people. Does that sound like something doing right could do?', { to: 'polemarchus' }],
@@ -522,6 +527,7 @@ function setupBook1(g, api) {
     await gg.lines([
       ['thrasymachus', 'You want to hear how Socrates made a fool of me. He didn’t.', 'angry'],
       ['thrasymachus', 'I’ll tell you what I told them. And it’s the truth, whatever he did to it afterwards.', 'scorn']]);
+    gg.memoryTeller = 'thrasymachus';
     await remember(gg, 'Last night, as Thrasymachus tells it', async () => {
       await gg.lines([
         ['thrasymachus', 'What rubbish, the pair of you! Bowing and giving way to each other like fools.', { to: 'socrates', mood: 'angry', play: 'fistShake' }],
@@ -534,10 +540,10 @@ function setupBook1(g, api) {
         ['thrasymachus', 'Sometimes. Of course.', { to: 'socrates' }],
         ['socrates', 'And you say it is right for everyone to obey the law, whatever it says?', { to: 'thrasymachus' }],
         ['thrasymachus', 'Yes.', { to: 'socrates' }],
-        ['socrates', 'Then let me ask our guest. What happens on the day they pass a law that is bad for them, and everyone obeys it?', { mood: 'happy' }]]);
-      const c = await gg.choose(['People do what is bad for the stronger, and it still counts as “right”.', 'Then nobody ought to obey that law.'], { prompt: 'The rulers pass a law that is bad for themselves, and everyone obeys it. What follows?', name: 'Socrates' });
+        ['socrates', 'Then what happens on the day they pass a law that is bad for them, and everyone obeys it?', { to: 'thrasymachus', mood: 'think' }], ['', 'Thrasymachus breaks off and glares at you.'], ['thrasymachus', 'Go on, then. You answer him, since you think it is so easy.', { mood: 'scorn' }]]);
+      const c = await gg.choose(['People do what is bad for the stronger, and it still counts as “right”.', 'Then nobody ought to obey that law.'], { prompt: 'The rulers pass a law that is bad for themselves, and everyone obeys it. What follows?', name: 'Thrasymachus' });
       gg.log.push({ t: 'attempt', skill: 'counterexample', correct: c === 0 });
-      if (c === 1) { await gg.say('socrates', 'He has just told us that obeying is always right. So on that day, doing right is...', { mood: 'think' }); await gg.choose(['...bad for the stronger.']); }
+      if (c === 1) { await gg.say('', 'Thrasymachus had just said that obeying is always right. So on that day, doing right is...'); await gg.choose(['...bad for the stronger.']); }
       await gg.lines([
         ['socrates', 'So sometimes “right” is what is good for the stronger, and sometimes it is what is bad for them. I don’t think that’s what you meant.', { to: 'thrasymachus' }],
         ['clitophon', 'He meant whatever the stronger think is good for them.', { to: 'socrates' }],

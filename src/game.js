@@ -169,7 +169,7 @@ export class Game {
     await this.kit.load('./assets/kit/');
     progress(0.6);
     const w = this.world;
-    this.spaces.world = { name: 'world', ground: (x, z) => w.standY(x, z), walkable: (x, z) => w.walkable(x, z), resolve: (x, z, rr) => w.resolve(x, z, rr), solidAt: (x, y, z, p) => w.solidAt(x, y, z, p), surface: () => 'earth' };
+    this.spaces.world = { name: 'world', ground: (x, z) => w.standY(x, z), walkable: (x, z) => w.walkable(x, z), resolve: (x, z, rr) => w.resolve(x, z, rr), solidAt: (x, y, z, p) => w.solidAt(x, y, z, p), blocksView: (x, y, z, p) => w.blocksView(x, y, z, p), surface: () => 'earth' };
     this.spaces.lydia = this.spaces.world;
     // The player.
     this.player = new Actor({ skin: 'tan', hair: 0x3a2a1c, beard: 'short', robe: 0xd8cdb0, robe2: 0x6f7f8a, hat: 'petasos', ownMaterial: true }, 99);
@@ -274,6 +274,12 @@ export class Game {
   setFocus(target) { // a person or point the camera should frame together with the player
     if (target && this.cam.mode === 'follow') { this.focus = target; }
     else if (!target && this.focus) { this.focus = null; }
+  }
+  // Put the conversation camera on a person at once, with no swing. For use while the picture is faded out, so that
+  // the view is already in place when it fades back in.
+  frameOn(target) {
+    this.setFocus(target); if (!this.focus) return;
+    const p = this.player; this.cam.fYaw = Math.atan2(target.x - p.x, target.z - p.z) + 0.58; this.snapCam = true;
   }
   async say(who, text, opts = {}) {
     let name = who, role = opts.role || '';
@@ -514,9 +520,10 @@ export class Game {
     this.sky.indoor = damp(this.sky.indoor || 0, room ? 1 : 0, 3, dt);
     for (let s = 0.4; s <= dist + 0.01; s += 0.35) {
       const x = c.t.x + dx * s, y = c.t.y + dy * s, z = c.t.z + dz * s;
-      if (sp.solidAt(x, y, z, 0.3) || y < sp.ground(x, z) + 0.35 || (room && room.inside(x, z, 0.3) && y > room.roofY(x, z))) { ok = Math.max(0.6, s - 0.45); break; }
+      if ((sp.blocksView ? sp.blocksView(x, y, z, 0.3) : sp.solidAt(x, y, z, 0.3)) || y < sp.ground(x, z) + 0.35 || (room && room.inside(x, z, 0.3) && y > room.roofY(x, z))) { ok = Math.max(0.6, s - 0.45); break; }
     }
-    c.cur = ok < c.cur ? damp(c.cur, ok, 18, dt) : damp(c.cur, ok, 3, dt);
+    // The camera comes in fast only when something is in the way. When the wanted distance itself changes (a new speaker is nearer or farther), it eases at the same gentle rate in both directions.
+    c.cur = ok < dist - 0.01 && ok < c.cur ? damp(c.cur, ok, 18, dt) : damp(c.cur, ok, 3, dt);
     if (this.snapCam) c.cur = ok;
     this.camera.position.set(c.t.x + dx * c.cur, c.t.y + dy * c.cur, c.t.z + dz * c.cur);
     // Backed against a wall indoors, the camera ends up inside the player's head: stop drawing the player then.

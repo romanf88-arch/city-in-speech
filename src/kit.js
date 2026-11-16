@@ -123,7 +123,7 @@ export class Kit {
         for (const c of info.colliders) {
           const [wx, wz] = toWorld(c.x || 0, c.z || 0);
           if (c.t === 'circle') w.addCircle(wx, wz, c.r * s, size[1] * s);
-          else w.addBox(wx, wz, c.hx * s, c.hz * s, rot + (c.rot || 0), size[1] * s);
+          else w.addBox(wx, wz, c.hx * s, c.hz * s, rot + (c.rot || 0), (c.h != null ? c.h : size[1]) * s);   // c.h: the collider's own height, when it is lower than its model
         }
       } else if (a.standIn && OPEN_WHEN_STANDIN.has(id)) {
         /* a stand-in box for something you walk through: leave it open */

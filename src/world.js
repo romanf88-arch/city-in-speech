@@ -296,6 +296,24 @@ export class World {
     return false;
   }
 
+  // The camera's version of solidAt: would something here hide the person the camera is looking at? Things lower
+  // than a person do not, and neither do thin posts (the colonnade in the courtyard, torch posts): the camera
+  // sees past them. Pulling in for those made the view jump close and back as it turned (Roman saw it in the
+  // night scenes, 2026-11-15).
+  blocksView(x, y, z, pad = 0.25) {
+    const list = this._near(x, z); if (!list) return false;
+    for (let k = 0; k < list.length; k++) {
+      const c = list[k];
+      if (c.off || c.h < 1.6) continue;
+      if (c.t === 0) { if (c.r >= 0.3 && Math.hypot(x - c.x, z - c.z) < c.r + pad) return true; }
+      else {
+        const dx = x - c.x, dz = z - c.z, lx = dx * c.cos - dz * c.sin, lz = dx * c.sin + dz * c.cos;
+        if (Math.abs(lx) < c.hx + pad && Math.abs(lz) < c.hz + pad) return true;
+      }
+    }
+    return false;
+  }
+
   walkable(x, z) {
     if (x < BOUNDS.x0 + 8 || x > BOUNDS.x1 - 8 || z < BOUNDS.z0 + 8 || z > BOUNDS.z1 - 6) return false;
     return this.groundY(x, z) > 0.18;
