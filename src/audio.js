@@ -1,6 +1,8 @@
 // Sound made in the browser: no audio files. Sea, wind, fire, footsteps, a plucked lyre, and small interface tones.
 import { clamp } from './util.js';
 
+const SEA_LEVEL = 0.026;   // how loud the sea is at the water's edge. Halve it to take 6 dB off.
+
 export class Audio {
   constructor() { this.ctx = null; this.on = true; this.beds = {}; this.levels = {}; }
   unlock() {
@@ -13,7 +15,7 @@ export class Audio {
       const len = this.ctx.sampleRate * 2, buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate), d = buf.getChannelData(0);
       let last = 0; for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = w * 0.5 + last * 6; }
       this.noise = buf;
-      this.bed('sea', 420, 0.7, 0.13); this.bed('wind', 900, 0.4, 0.2); this.bed('fire', 2600, 1.2, 0); this.bed('crowd', 520, 2.2, 0.0); this.bed('cave', 160, 0.9, 0);
+      this.bed('wind', 900, 0.4, 0.2); this.bed('fire', 2600, 1.2, 0); this.bed('crowd', 520, 2.2, 0.0); this.bed('cave', 160, 0.9, 0);
     } catch (e) { this.ctx = null; }
   }
   bed(name, freq, q, level) {
@@ -29,6 +31,37 @@ export class Audio {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     for (const k in this.beds) { const v = clamp(levels[k] != null ? levels[k] : 0, 0, 1); this.beds[k].gain.setTargetAtTime(v, t, 0.8); }
+  }
+  // The sea: a low wash that swells and falls back every few seconds, with a little hiss at the top of each swell.
+  // Until 2026-11-17 it was one steady band of noise at about -33 dB. Roman, on hearing it: "waves are too loud",
+  // and "it should start quieter and then disappear as you move away". Measured with an offline render: at
+  // level 1 the swells are now about -45 dB and the water between them about -55 dB.
+  // level 0..1 is how near the water the listener stands (places.js). Called twice a second.
+  sea(level) {
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime;
+    if (!this.seaNodes) {
+      if (level <= 0) return;      // nothing is built until the player first comes near the water
+      const src = c.createBufferSource(); src.buffer = this.noise; src.loop = true;
+      const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 70;        // the noise is heavy at the bottom: take out the rumble
+      const low = c.createBiquadFilter(); low.type = 'lowpass'; low.frequency.value = 320; low.Q.value = 0.5;
+      const lowG = c.createGain(); lowG.gain.value = 0.22;
+      const wash = c.createBiquadFilter(); wash.type = 'bandpass'; wash.frequency.value = 1800; wash.Q.value = 0.6;
+      const washG = c.createGain(); washG.gain.value = 0.02;
+      const out = c.createGain(); out.gain.value = 0;
+      src.connect(hp); hp.connect(low); low.connect(lowG); lowG.connect(out); src.connect(wash); wash.connect(washG); washG.connect(out); out.connect(this.master); src.start();
+      this.seaNodes = { lowG, washG, out, next: 0 };
+    }
+    const s = this.seaNodes;
+    s.out.gain.setTargetAtTime(clamp(level, 0, 1) * SEA_LEVEL, t, 0.8);
+    if (level <= 0) return;
+    // each swell is set a little before it is due: it rises for about two seconds, then falls back for three to five
+    while (s.next < t + 1.5) {
+      const t0 = Math.max(s.next, t), up = 1.6 + Math.random() * 0.8, k = 0.6 + Math.random() * 0.4;
+      s.lowG.gain.setTargetAtTime(k, t0, up / 3); s.lowG.gain.setTargetAtTime(0.22, t0 + up, 1.1);
+      s.washG.gain.setTargetAtTime(0.5 * k, t0 + up * 0.7, 0.25); s.washG.gain.setTargetAtTime(0.02, t0 + up + 0.3, 0.7);
+      s.next = t0 + up + 3 + Math.random() * 2.5;
+    }
   }
   setOn(on) { this.on = on; if (this.master) this.master.gain.setTargetAtTime(on ? 0.8 : 0, this.ctx.currentTime, 0.05); }
   tone(freq, dur, type = 'sine', vol = 0.12, slide = 0) {

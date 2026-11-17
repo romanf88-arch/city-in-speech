@@ -135,15 +135,19 @@ export function setupPlaces(g) {
       const near = world && Math.hypot(p.x - s.x, p.z - s.z) < 80;
       s.puffs.forEach((sp, i) => { sp.visible = near; if (!near) return; const q = (t / 14 + i / s.puffs.length) % 1, lean = q * q, sc = 1.0 + q * 4.2; sp.position.set(s.x + lean * 6 + Math.sin(i * 2.4 + q * 5) * 0.4 * q, s.y + q * s.rise, s.z + lean * 2); sp.scale.set(sc, sc, 1); sp.material.opacity = 0.42 * Math.pow(Math.sin(Math.PI * Math.min(1, q * 1.3)), 0.6) * (1 - q * 0.7); });
     }
-    // the sea near the harbor, the wind in the open, and the low tone of the cave (audio.js; these layers were
-    // built but never switched on). Set twice a second; the sound follows over about a second.
+    // The sea at the water's edge, the wind in the open, and the low tone of the cave. Set twice a second; the sound
+    // follows over about a second. Levels were measured with an offline render on 2026-11-17, after Roman heard the
+    // first version: "waves are too loud", "it should start quieter and then disappear as you move away".
+    // The sea is heard only within 38 m of the quay's edge. The wind and the cave tone came down by about 10 dB too,
+    // because the wind on the hill and the cave tone measured as loud as the sea he complained of.
     soundT -= dt;
     if (soundT <= 0 && g.audio && g.audio.mix) {
       soundT = 0.5;
       const wind = (g.sky && g.sky.cur && g.sky.cur.wind != null ? g.sky.cur.wind : 1);
-      const sea = world ? 0.13 * Math.max(0, Math.min(1, (p.z + 30) / 85)) : 0;
-      const air = g.space === 'cave' ? 0 : g.space === 'lydia' ? 0.07 : d && d.id === 'hill' ? 0.11 : d && (d.id === 'fields' || d.id === 'stakes') ? 0.07 : d && d.id === 'harbor' ? 0.05 : 0.025;
-      g.audio.mix({ sea, wind: air * Math.min(2, wind), cave: g.space === 'cave' ? 0.14 : 0 });
+      const edge = world ? Math.max(0, 58.3 - p.z) : 99, sea = edge >= 38 ? 0 : Math.pow(1 - edge / 38, 2);      // 58.3 is the quay front
+      const air = g.space === 'cave' ? 0 : g.space === 'lydia' ? 0.016 : d && d.id === 'hill' ? 0.022 : d && (d.id === 'fields' || d.id === 'stakes') ? 0.016 : d && d.id === 'harbor' ? 0.006 : 0.008;   // at the harbor the wind is kept under the sea, or its steady hiss hides the swells
+      if (g.audio.sea) g.audio.sea(sea);
+      g.audio.mix({ wind: air * Math.min(2, wind), cave: g.space === 'cave' ? 0.045 : 0 });
     }
   });
   g.places = { districtAt, cur };
