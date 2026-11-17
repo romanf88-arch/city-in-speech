@@ -636,9 +636,20 @@ export class Post {
     c.uFog.value.copy(this._f[0]); c.uHzSun.value.copy(this._f[1]); c.uHzAnti.value.copy(this._f[2]); c.uSunDir.value.copy(sky.sunDir);
     c.uSunCol.value.copy(cur.sun).multiplyScalar(cur.sunI);
     c.uHaze.value.set(inCave || !deep ? 0 : L.hazeThick * cur.haze, L.hazeHeight, cur.fogN, cur.fogF);   // in the town the near haze is in the materials' fog (see fog_fragment above)
-    c.uGrade.value.set(exs, L.color * (night && !inCave ? 0.78 : 1), L.contrast * (inCave ? 1.25 : 1), L.corners * (inCave ? 1.2 : 1));   // less color at night
+    const un = this.unseen || 0;   // 0..1: the player wears the ring turned in. Less color, cooler, darker corners.
+    c.uGrade.value.set(exs, L.color * (night && !inCave ? 0.78 : 1) * (1 - 0.55 * un), L.contrast * (inCave ? 1.25 : 1), L.corners * (inCave ? 1.2 : 1) + 1.1 * un);   // less color at night
     if (night && !inCave) { c.uWarm.value.set(1, 1, 1); c.uCool.value.set(0.94, 0.98, 1.08); }   // at night the shade goes cool and nothing is warmed
-    else { c.uWarm.value.fromArray(L.warm); c.uCool.value.fromArray(L.cool); } c.uRedPull.value = L.redPull; c.uFxaa.value = useD ? 1 : 0; c.uRcp.value.set(1 / W, 1 / H);
+    else { c.uWarm.value.fromArray(L.warm); c.uCool.value.fromArray(L.cool); }
+    if (un > 0.001) { c.uWarm.value.lerp(this._unW || (this._unW = new THREE.Vector3(0.93, 0.98, 1.06)), un); c.uCool.value.lerp(this._unC || (this._unC = new THREE.Vector3(0.9, 0.97, 1.1)), un); }
+    // The district the player is in shifts the light, the color and the far haze a little (places.js sets this.place
+    // and moves it slowly as the player crosses from one to the next). At night the shift is less than half as strong.
+    const pl = this.place;
+    if (pl && !inCave && !this.neutral) {
+      const pk = night ? 0.4 : 1, m = (v) => 1 + (v - 1) * pk, G = c.uGrade.value, W = c.uWarm.value, K = c.uCool.value;
+      G.x *= m(pl.ex); G.y *= m(pl.color); G.z *= m(pl.contrast); c.uHaze.value.x *= m(pl.haze);
+      W.set(W.x * m(pl.wr), W.y * m(pl.wg), W.z * m(pl.wb)); K.set(K.x * m(pl.cr), K.y * m(pl.cg), K.z * m(pl.cb));
+    }
+    c.uRedPull.value = L.redPull; c.uFxaa.value = useD ? 1 : 0; c.uRcp.value.set(1 / W, 1 / H);
     // Motion blur: the camera of the last frame, and none on the first frame after a cut (a jump of more than 3 m or
     // a turn of more than half a radian in one frame), in the old look (F9), or without the depth picture.
     this._vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);

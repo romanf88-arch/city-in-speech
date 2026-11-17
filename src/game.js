@@ -262,6 +262,11 @@ export class Game {
   addNPC(def) { const n = new NPC(this, def); this.npcs.set(def.id, n); n.snapY(); return n; }
   addSpot(s) { this.spots.push(s); return s; }
   addTrigger(t) { this.triggers.push(t); return t; }
+  // Lightning: the sky flashes twice, and the thunder follows a moment later. With reduced motion, the sound only.
+  lightning(delay = 0.4) {
+    if (!this.reduceMotion) { this.sky.flash = 1.7; this.wait(0.13).then(() => { this.sky.flash = Math.max(this.sky.flash || 0, 0.8); }); }
+    this.wait(delay).then(() => this.audio.thunder());
+  }
   wait(seconds) { if (this.ui.auto) return Promise.resolve(); return new Promise((res) => this.waits.push({ t: this.time + seconds, res })); }
   // Run a scripted exchange. The player cannot walk while it runs.
   async run(fn) {
@@ -375,7 +380,7 @@ export class Game {
     p.heading += p.turnV * dt;
     if (this.cam.mode === 'follow' && this.cam.drag && fwd > 0) p.heading = dampAngle(p.heading, this.cam.yaw, 10, dt);
     if (this.cam.mode === 'first' && !this.cam.fpLimit && fwd !== 0) { p.heading += this.cam.fpYaw * Math.min(1, 6 * dt); this.cam.fpYaw *= 1 - Math.min(1, 6 * dt); }
-    const run = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
+    const run = (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) && !this.noRun;   // noRun: leading a sheep on a rope
     const want = (fwd > 0 ? (run ? CONFIG.run : CONFIG.walk) : fwd < 0 ? -CONFIG.back : 0) * (this.speedScale || 1);
     // Speed builds up and falls off over a few tenths of a second instead of jumping, so starting and stopping have
     // some weight. Stopping is quicker than starting, so the player never feels the character slide.
@@ -518,6 +523,8 @@ export class Game {
     let ok = dist;
     const room = this.space === 'world' ? this.world.indoor(p.x, p.z) : null;   // under a roof: the camera may not rise through it
     this.sky.indoor = damp(this.sky.indoor || 0, room ? 1 : 0, 3, dt);
+    this.post.unseen = damp(this.post.unseen || 0, this.invisible ? 1 : 0, 6, dt);
+    if (this.sky.flash) this.sky.flash = this.sky.flash < 0.03 ? 0 : damp(this.sky.flash, 0, 11, dt);   // lightning fades in about a quarter of a second   // the ring: the world loses color while nobody can see you
     for (let s = 0.4; s <= dist + 0.01; s += 0.35) {
       const x = c.t.x + dx * s, y = c.t.y + dy * s, z = c.t.z + dz * s;
       if ((sp.blocksView ? sp.blocksView(x, y, z, 0.3) : sp.solidAt(x, y, z, 0.3)) || y < sp.ground(x, z) + 0.35 || (room && room.inside(x, z, 0.3) && y > room.roofY(x, z))) { ok = Math.max(0.6, s - 0.45); break; }

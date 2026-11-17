@@ -22,6 +22,8 @@ async function boot() {
     if (story) await story.setup(game);
     // People at work around the town. The game still runs if this part is missing.
     try { const life = await import('./life.js'); life.setupLife(game); } catch (e) { console.warn('People at work not loaded:', e && e.message); }
+    // The districts: a name on entering each, its own light, and a few landmarks. The game still runs without them.
+    try { const places = await import('./places.js'); places.setupPlaces(game); } catch (e) { console.warn('Districts not set up:', e && e.message); }
     progress(1);
     game.mode = 'menu';
     game.env('afternoon', 0);

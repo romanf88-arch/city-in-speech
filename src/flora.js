@@ -1011,6 +1011,13 @@ export class Flora {
   }
 
   // Called every frame.
+  // Put the plants near a point back on the ground after the ground has changed shape (the crack in the ring story:
+  // the grass over it used to stay where it was, in the air).
+  reseat(x, z, radius) {
+    const R = this.R, w = this.world; if (!R || !w || !w.terrainY) return;
+    for (let i = 0; i < R.n; i++) { if (Math.hypot(R.x[i] - x, R.z[i] - z) > radius) continue; const y = w.terrainY(R.x[i], R.z[i]); R.y[i] = y; R.m[i * 16 + 13] = y; R.fa[i * 8 + 1] = y; }
+    this.dirty = true;
+  }
   update(sky, camera, dt) {
     const wind = sky.cur.wind;
     this.time += dt * (0.7 + 0.3 * wind);

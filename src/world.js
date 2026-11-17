@@ -1068,6 +1068,6 @@ export class Sky {
     const ind = this.indoor || 0;
     this.hemi.color.copy(c.hemiSky); this.hemi.groundColor.copy(c.hemiGnd); this.hemi.intensity = c.hemiI * (1 - 0.5 * ind);
     this.scene.fog.color.copy(c.fog); this.scene.fog.near = c.fogN; this.scene.fog.far = c.fogF;
-    this.renderer.toneMappingExposure = c.exp * (1 + 0.3 * ind);
+    this.renderer.toneMappingExposure = c.exp * (1 + 0.3 * ind) * (1 + (this.flash || 0));   // flash: lightning (game.lightning)
   }
 }

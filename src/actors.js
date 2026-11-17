@@ -645,6 +645,47 @@ export function poseQueued(camera) {
   }
 }
 
+// How the wearer of the ring looks to the player: a pale figure you can see through, brighter at its edges. It is
+// drawn in two steps (two groups over the same triangles): first only its depth, then its color where it is the
+// nearest surface. Without the first step the far side of the clothes and the body under them would show through.
+let GHOST = null;
+function ghostMaterials() {
+  if (GHOST) return GHOST;
+  const depth = new THREE.MeshBasicMaterial({ colorWrite: false, transparent: true, side: THREE.DoubleSide });
+  const body = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, depthFunc: THREE.LessEqualDepth, side: THREE.DoubleSide,
+    uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0.78, 0.9, 1.0) }, uGain: { value: 1.25 } },
+    vertexShader: `
+      #include <common>
+      #include <skinning_pars_vertex>
+      varying vec3 vN; varying vec3 vV; varying float vY;
+      void main() {
+        #include <beginnormal_vertex>
+        #include <skinbase_vertex>
+        #include <skinnormal_vertex>
+        #include <defaultnormal_vertex>
+        #include <begin_vertex>
+        #include <skinning_vertex>
+        #include <project_vertex>
+        vN = transformedNormal; vV = -mvPosition.xyz; vY = (modelMatrix * vec4(transformed, 1.0)).y;
+      }`,
+    fragmentShader: `
+      uniform vec3 uColor; uniform float uTime; uniform float uGain;
+      varying vec3 vN; varying vec3 vV; varying float vY;
+      void main() {
+        float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
+        float rim = f * f;
+        float wave = 0.5 + 0.5 * sin(vY * 24.0 - uTime * 2.4);
+        float a = 0.1 + 0.8 * rim + 0.06 * wave * wave;
+        gl_FragColor = vec4(uColor * uGain * (0.8 + 0.7 * rim), a);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
+  return (GHOST = [depth, body]);
+}
+const smooth01 = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+
 export class Actor {
   // Let time pass for this person without posing it yet (see poseQueued). The place is updated at once.
   queue(dt, quality = 1) { this.pend = Math.min((this.pend || 0) + dt, 0.25); this.pendQ = quality; QUEUED.add(this); this.sync(); }
@@ -717,7 +758,7 @@ export class Actor {
   }
   _low(geometry) {
     const m = new THREE.SkinnedMesh(geometry, this.material2); m.bind(this.mesh.skeleton, this.mesh.bindMatrix);
-    m.scale.copy(this.mesh.scale); m.castShadow = this.mesh.castShadow; m.boundingSphere = this.mesh.boundingSphere; this.group.add(m); return m;
+    m.scale.copy(this.mesh.scale); m.castShadow = this.mesh.castShadow; m.boundingSphere = this.mesh.boundingSphere; this.group.add(m); if (this.ghost) this._ghostMesh(m); return m;
   }
   // A smooth person's hat (other than a wreath) and the tools of its activity: low-polygon, on the same bones.
   _extras() {
@@ -737,15 +778,27 @@ export class Actor {
     this.lod = l; this.near = l < 2;
     if (l === 2 && !this.far) this.far = this._low(buildFigure(this.spec, this.seed, this.props ? (b) => addTools(b, this.props) : null, (b) => this._lowShift(b)));
     if (l < 2) this.mesh.geometry = l === 0 ? this.geoNear : this.geoMid || (this.geoMid = composeGeometry(this.model, this.pick.parts.map((n) => (this.model.parts['m:' + n] ? 'm:' + n : n))));
+    if (this.ghost && l < 2) this._ghostMesh(this.mesh);
     this.mesh.visible = l < 2; if (this.extras) this.extras.visible = l < 2; if (this.far) this.far.visible = l === 2;
   }
   // Pick the level from the distance to whoever is looking, with some slack so it does not flicker at a boundary.
   setDistance(d) { const l = this.lod; this.setLod(d < (l === 0 ? 7.5 : 6) ? 0 : d < (l === 2 ? 19 : 22) ? 1 : 2); }
   setNear(on) { this.setLod(on ? 0 : 2); }
   shadows(on) { this.mesh.castShadow = on; if (this.extras) this.extras.castShadow = on; if (this.far) this.far.castShadow = on; }
+  // The ring: show this person as a pale see-through figure (see ghostMaterials), or as usual again.
+  setGhost(on) {
+    on = !!on; if (on === !!this.ghost) return;
+    this.ghost = on;
+    for (const m of [this.mesh, this.extras, this.far]) if (m) this._ghostMesh(m);
+  }
+  _ghostMesh(m) {
+    const g = m.geometry; g.clearGroups();
+    if (this.ghost) { g.addGroup(0, Infinity, 0); g.addGroup(0, Infinity, 1); m.material = ghostMaterials(); }
+    else m.material = m === this.mesh ? this.material : this.material2;
+  }
   // Change the look in place (the ring story dresses the player as other people).
   setLook(spec) {
-    this.spec = Object.assign({}, spec);
+    this.spec = Object.assign({}, spec, this.spec.ownMaterial ? { ownMaterial: true } : null);
     if (!this.model) { this.mesh.geometry.dispose(); this.mesh.geometry = buildFigure(spec, this.seed); return; }
     const pick = modelFor(spec, this.seed);
     if (!pick || pick.kit !== this.model) { console.warn('That look needs another body; keeping the present one.'); return; }
@@ -772,7 +825,7 @@ export class Actor {
   settle(n = 40) { for (let i = 0; i < n; i++) this.update(1 / 20); return this; }
 
   update(dt, quality = 1) {
-    this.t += dt;
+    this.t += dt; if (this.ghost) GHOST[1].uniforms.uTime.value = this.t;
     const def = this.act ? ACTS[this.act] : null, D = this.D, armX = D.armOut - 0.07;
     this.actW = damp(this.actW, this.actOn ? 1 : 0, 7, dt);
     if (def && !this.actOn && this.actW < 0.02) { this.act = null; this.actW = 0; }
@@ -785,7 +838,7 @@ export class Actor {
     // body leans in, and the elbows bend.
     const v = Math.max(0, this.speed), Ls = Math.max(0.6, this.h * this.legS);
     const runT = clamp((v - 3.8) / 1.6, 0, 1), runK = runT * runT * (3 - 2 * runT), stance = 1 - 0.45 * runK;
-    const maxA = short ? 0.72 : 0.42, legL = 0.88 * Ls, reachMax = 2 * legL * Math.sin(maxA) / stance;
+    const maxA = short ? 0.56 + 0.16 * runK : 0.42, legL = 0.88 * Ls, reachMax = 2 * legL * Math.sin(maxA) / stance;
     const cad = Math.max((1.8 - 1.15 * Math.exp(-v / 2.6)) / Math.sqrt(Ls), v / (2 * reachMax));      // strides a second
     const stepLen = v / (2 * cad);
     const aWant = Math.asin(clamp(stepLen * stance / (2 * legL), 0, Math.sin(maxA)));
@@ -793,6 +846,9 @@ export class Actor {
     this.phase += 2 * Math.PI * cad * dt * clamp(v / 0.3, 0, 1);
     const wk = this.walk, ph = this.phase, rk = this.runK * wk;
     const A = this.gaitA * wk, s = Math.sin(ph);
+    // Bare legs show everything a long robe hides, so their walk is shaped more closely (Roman, 2026-11-15: the
+    // shepherd "walks funny": his legs opened like a pair of compasses and his feet hung in the air).
+    const bare = short && !!this.model;
     this.talking = damp(this.talking, this.speaking ? 1 : 0, 6, dt);
     if (this.speaking) this.talkT += dt;
     const tk = this.talking * this.gesture, tt = this.talkT;
@@ -859,9 +915,13 @@ export class Actor {
     for (const name of ANIM_BONES) { const gv = gw[name] || (gw[name] = [0, 0, 0]); gv[0] = gv[1] = gv[2] = 0; }
     for (const [side, q] of legs) {
       const sq = Math.sin(q), cq = Math.cos(q);
-      gw['thigh' + side][0] = -(A * sq + 0.16 * rk);
+      const fw = bare ? 0.14 * (1 - this.runK) : 0;   // at a walk a bare leg reaches farther forward than back
+      gw['thigh' + side][0] = -(A * ((1 - fw) * sq + fw) + 0.16 * rk);
       const swing = Math.max(0, Math.cos(q + 0.55)), load = Math.max(0, -cq);
-      gw['shin' + side][0] = wk * (0.05 + (0.32 + (short ? 1.15 : 0.45) * rk) * (A / 0.5) * swing * swing + (0.1 + 0.3 * rk) * (A / 0.5) * load);   // in a long robe the heel kicks less, or the leg shows behind the hem
+      // A bare leg's knee starts to bend before the foot leaves the ground, bends most just after, and is straight when the heel comes down.
+      const dq = wrapPi(q + 1.12), bell = Math.exp(-dq * dq / 0.5625);
+      const bend = bare ? 0.9 * bell * (1 - this.runK) + (0.32 + 1.15 * rk) * swing * swing * this.runK : (0.32 + (short ? 1.15 : 0.45) * rk) * swing * swing;
+      gw['shin' + side][0] = wk * (0.05 + bend * (A / 0.5) + (0.1 + 0.3 * rk) * (A / 0.5) * load);   // in a long robe the heel kicks less, or the leg shows behind the hem
       // The arm on this side swings back as this leg comes forward.
       gw['arm' + (side === 'L' ? 'L' : 'R')][0] = (0.55 + 0.35 * rk) * A * sq;
       gw['fore' + side][0] = -(0.12 * wk + 1.0 * rk);
@@ -875,8 +935,25 @@ export class Actor {
       let x = cu[0] + o[0] + gv[0]; if (name === 'foreL' || name === 'foreR') x = Math.max(x, -2.45);
       bones[name].quaternion.setFromEuler(_e.set(x, cu[1] + o[1] + gv[1], cu[2] + o[2] + gv[2], 'YXZ'));
     }
+    // Bare legs: the feet. The foot on the ground lies flat on it. It comes down heel first and leaves toes last
+    // with the heel raised. heelUp is how far that raises the ankle, for setting the body's height below.
+    const heel = this.heelUp || (this.heelUp = [0, 0]); heel[0] = heel[1] = 0;
+    const wf = wk * (1 - this.runK);
+    if (bare && wf > 0.005 && !P.feet) {
+      const c = this.cur, kb = K.b, hx = c.hips[0] + kb.hips[0];
+      for (let i = 0; i < 2; i++) {
+        const side = legs[i][0], q = legs[i][1];
+        const a2 = hx + c['thigh' + side][0] + kb['thigh' + side][0] + gw['thigh' + side][0] + c['shin' + side][0] + kb['shin' + side][0] + gw['shin' + side][0];
+        const on = smooth01(-0.3, 0.1, -Math.cos(q));                      // 1 while this foot is on the ground
+        const d1 = wrapPi(q - Math.PI / 2), d2 = wrapPi(q + Math.PI / 2);   // from the heel coming down, from the toes leaving
+        const W = -0.22 * Math.exp(-d1 * d1 / 0.16) + 0.8 * Math.exp(-d2 * d2 / 0.3);   // the foot's slope: minus is toes up
+        bones['foot' + side].quaternion.setFromAxisAngle(XAXIS, wf * (on * (W - a2) - (1 - on) * 0.1));
+        heel[i] = wf * on * 0.11 * Math.max(0, Math.sin(W));
+      }
+      this.gaitFoot = true;
+    } else if (this.gaitFoot) { bones.footL.quaternion.identity(); bones.footR.quaternion.identity(); this.gaitFoot = false; }
     this.lift = damp(this.lift, P.lift || 0, 9, dt);
-    const bob = (1 - this.runK) * (1 - Math.abs(s)) * 0.022 * (A / 0.5) + this.runK * Math.abs(s) * 0.05;
+    const bob = (bare ? 0 : 1 - this.runK) * (1 - Math.abs(s)) * 0.022 * (A / 0.5) + this.runK * Math.abs(s) * 0.05;   // bare legs: the rise and fall comes from the legs, below
     this.rootX = damp(this.rootX, P.rootX || 0, 6, dt);
     let lift = this.lift + this.lift0 + K.lift + bob * wk;
     if (this.model && !P.feet && Math.abs(this.rootX) < 0.2) {
@@ -884,8 +961,9 @@ export class Actor {
       // (sitting, kneeling) work out where the lower ankle ends up and raise the figure until that sole is on the ground.
       const c = this.cur, kb = K.b, hx = c.hips[0] + kb.hips[0], hipY = lift + 0.93 + D.hipY;
       let low = 9;
-      for (const s of ['L', 'R']) { const a1 = hx + c['thigh' + s][0] + kb['thigh' + s][0] + gw['thigh' + s][0], a2 = a1 + c['shin' + s][0] + kb['shin' + s][0] + gw['shin' + s][0]; low = Math.min(low, hipY - D.thigh * Math.cos(a1) - D.shin * Math.cos(a2)); }
+      for (const s of ['L', 'R']) { const a1 = hx + c['thigh' + s][0] + kb['thigh' + s][0] + gw['thigh' + s][0], a2 = a1 + c['shin' + s][0] + kb['shin' + s][0] + gw['shin' + s][0]; low = Math.min(low, hipY - D.thigh * Math.cos(a1) - D.shin * Math.cos(a2) - heel[s === 'L' ? 0 : 1]); }
       const need = D.ankle + 0.04 - low; if (need > 0) lift += Math.min(need, 0.08);
+      else if (bare) lift += need * wk;   // in a wide step, and with the knees bent in a run, both ankles are above the ground: the body comes down until the lower foot stands on it
     }
     bones.root.position.y = lift;
     bones.root.rotation.x = this.rootX;

@@ -38,6 +38,38 @@ export function buildLayout(game) {
   };
   afloat('ship_merchant', -67.3, 80, 0, 0.15, false, 1); afloat('ship_trireme', 67, 77.5, 0, 0.1, false, 0.7);
   afloat('ship_merchant', 14, 132, 0.5, 0.15, true, 1.4); afloat('boat_small', 22, 61.4, E, 0.1, true, 2.2); afloat('boat_small', -30, 61.6, Wd, 0.1, true, 2.2);   // 2 m clear of the quay front (58.3): nearer, the high quay edge hid half the hull and the boat looked jammed under it
+  // ---- the ship the player has just come off (2026-11-16). A review Roman passed on asked for the arrival to be
+  // framed "through ship rigging and a hanging sail", with the view angled "toward a bustling street". So a merchant
+  // ship lies stern-on at the middle of the quay, where the view north runs up the main street to the gate and the
+  // mountains. A sail has been let down to dry on the port side, loose ropes cross the deck, a gangplank runs to the
+  // quay, and two lines hold the stern. The opening shot itself is in story.js (openingShot).
+  afloat('ship_merchant', 2.2, 70.6, 0, 0.15, false, 0.5);
+  {
+    const ship = sites.arrivalShip = sites.afloat[sites.afloat.length - 1], cloth = new THREE.MeshLambertMaterial({ color: 0xe9dcc0, side: THREE.DoubleSide }), hemp = new THREE.MeshLambertMaterial({ color: 0x4a3a2a }), wood = new THREE.MeshLambertMaterial({ color: 0x6b4a32 });
+    // The sail: u runs from the end of the yard on the port side (0) to the mast (1), v from the foot (0) up to the yard (1).
+    // The lower port corner is hauled down to head height and the foot rises in a curve to the mast, so from the deck
+    // the cloth hangs across one upper corner of the view and the town shows under it. It hangs in pleats, is sewn
+    // from six strips (the darker seams), and has a darker hem.
+    const sail = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 40, 10), cloth), sp = sail.geometry.attributes.position, tint = new Float32Array(sp.count * 3), c0 = new THREE.Color(0xe9dcc0);
+    for (let i = 0; i < sp.count; i++) {
+      const u = sp.getX(i) + 0.5, v = sp.getY(i) + 0.5, foot = 3.5 + 2.9 * Math.pow(u, 1.4) + 0.1 * Math.sin(u * 18);
+      sp.setXYZ(i, -2.9 + u * 3.2 - 0.22 * Math.sin(Math.PI * v) * (1 - u), foot + v * (9.6 - foot), 1.0 + (0.04 + 0.1 * (1 - v)) * Math.sin(u * 30 + v * 2) + 0.3 * Math.sin(Math.PI * u) * Math.sin(Math.PI * v));
+      const k = (0.9 + 0.1 * Math.sin(u * 30 + v * 2 + 1.6)) * (Math.abs(((u * 6) % 1) - 0.5) > 0.46 ? 0.8 : 1) * (v < 0.06 || u < 0.02 ? 0.8 : 1);
+      tint[i * 3] = c0.r * k; tint[i * 3 + 1] = c0.g * k; tint[i * 3 + 2] = c0.b * k;
+    }
+    cloth.color.set(0xffffff); cloth.vertexColors = true; sail.geometry.setAttribute('color', new THREE.BufferAttribute(tint, 3));
+    sail.geometry.computeVertexNormals(); sail.castShadow = true; ship.rock.add(sail);
+    const line = (a, b, sag, parent, r = 0.03) => {
+      const pts = []; for (let i = 0; i <= 12; i++) { const t = i / 12; pts.push(new THREE.Vector3(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - Math.sin(t * Math.PI) * sag, a[2] + (b[2] - a[2]) * t)); }
+      parent.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, r, 5), hemp));   // no shadow: a rope this thin would cost a shadow draw for a line nobody sees
+    };
+    line([-2.9, 3.5, 1.0], [-2.3, 2.3, 3.2], 0.12, ship.rock, 0.025);   // the sheet that holds the sail's lower corner down
+    line([0.1, 11.2, 0.7], [2.6, 3.4, 5.5], 0.5, ship.rock); line([0.1, 10.4, 0.7], [-2.5, 3.3, 4.6], 0.4, ship.rock); line([2.9, 9.8, 2.5], [2.5, 3.3, -6.5], 0.9, ship.rock);
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.07, 5.2), wood); plank.position.set(4.6, 1.75, 60.2); plank.rotation.set(0.03, -0.25, 0); plank.castShadow = true; plank.receiveShadow = true; w.group.add(plank);
+    P('bollard', -7, 54.6);
+    // the stern lines, both to the left of the gangplank so that nobody walks through one
+    line([1.4, 2.6, 61.4], [0, 2.4, 54.7], 0.55, w.group, 0.035); line([0.2, 2.6, 61.5], [-7, 2.4, 54.7], 0.7, w.group, 0.035);
+  }
   game.tickers.push(() => {
     const t = game.time;
     for (const b of sites.afloat) {
@@ -50,7 +82,10 @@ export function buildLayout(game) {
   for (let x = -84; x <= 84; x += 14) if (Math.abs(Math.abs(x) - 60) > 6) P('bollard', x, 54.6);
   [['crate_stack', -44, 50, 0.3], ['crate_stack', -41.5, 51.2, 1.2], ['amphora_group', -36, 44, 0.1], ['amphora_group', 30, 49, -0.2], ['sacks', -52, 46, 0.5], ['sacks', 46, 51, 2.1],
     ['pithos', -24, 43, 0], ['pithos', -22.4, 44.2, 0], ['cart', 38, 43, 0.7], ['cart', -76, 44, -0.4], ['net_rack', 76, 50, 0.2], ['net_rack', 82, 46, 1.4], ['crate_stack', 52, 44, 0.8],
-    ['amphora', 33, 47.5, 0], ['amphora', -38.6, 46.4, 0], ['amphora', 12, 52, 0], ['sacks', 70, 42, 1.0], ['amphora_group', -66, 50.5, 0.4], ['crate_stack', 64, 52, 0.2]].forEach(([id, x, z, r]) => P(id, x, z, r));
+    ['amphora', 33, 47.5, 0], ['amphora', -38.6, 46.4, 0], ['amphora', 12, 52, 0],
+    ['sacks', -4.6, 53.2, 0.4], ['crate_stack', -7.2, 51.6, 0.2], ['crate_stack', -5.4, 50.3, 1.1], ['amphora', -3.3, 52.3, 0], ['amphora_group', 11.8, 55.2, 0.3], ['cart', 14.5, 43.5, 0.9], ['pithos', 17.5, 50.6, 0],
+    // the goods set down where the player lands, and two stalls that face each other across the mouth of the main street (life.js puts the people at them)
+    ['stall_b', -6.8, 36.6, E], ['stall_c', 7.2, 37.2, Wd], ['sacks', 70, 42, 1.0], ['amphora_group', -66, 50.5, 0.4], ['crate_stack', 64, 52, 0.2]].forEach(([id, x, z, r]) => P(id, x, z, r));
 
   // ---- buildings
   const houses = [];   // for the things set out by their doors (props.js)
@@ -128,6 +163,30 @@ export function buildLayout(game) {
     F('pithos', 3.45, -2.55); F('pithos', 2.3, -2.7); F('amphora', 1.35, -2.8); F('amphora', 0.9, -2.75); F('chest', 3.6, 2.45, -PI / 2);
     F('couch', -3.55, 0.3); F('table_low', -2.4, 1.2); F('hydria', -3.7, 2.8); F('basket_figs', -2.4, 1.2, 0, 0.45);
     { const [x, z] = home.at(-2.45, -1.45); P('rock_a', x, z, 0.7, { y: sy + 0.02, scale: 0.32, noCollide: true }); }   // the lower grindstone
+  }
+  // ---- the house of Philokles (invented: the man Bion owes, story_bion.js), on the main street north of the square
+  // and across the street from the shield workshop. It is the same building as the schoolroom: one long room. He
+  // sleeps at the end by the door. The chest is at the far end behind a curtain, beside the bench and the shields
+  // the court gave him from Bion's shop. The night scene played here is in story_theft.js.
+  {
+    const SX = -11.5, SZ = -56, R = E, cs = Math.cos(R), sn = Math.sin(R);
+    const ph = sites.philokles = P('school', SX, SZ, R, { lift: 0.14 }), sy = ph.y;
+    ph.at = (a, b) => [SX + a * cs + b * sn, SZ - a * sn + b * cs];   // a: along the room, from the end by the door (-) to the chest (+); b: back wall (-) to the street wall (+)
+    ph.floor = sy + 0.05;
+    const local = ph.local = (x, z) => { const dx = x - SX, dz = z - SZ; return [dx * cs - dz * sn, dx * sn + dz * cs]; };
+    ph.room = { name: 'philokles',
+      inside: (x, z, pad = 0) => { const [a, b] = local(x, z); return Math.abs(a) < 4.1 + pad && Math.abs(b) < 3.2 + pad; },
+      roofY: (x, z) => sy + 4.8 - 0.5 * Math.abs(local(x, z)[1]),
+      bounce: (() => { const [x, z] = ph.at(-2.0, 1.5); return [x, sy + 0.7, z]; })() };
+    (w.rooms || (w.rooms = [])).push(ph.room);
+    const F = (id, a, b, r = 0, up = 0.05) => { const [x, z] = ph.at(a, b); return P(id, x, z, R + r, { y: sy + up }); };
+    ph.couch = F('couch', -3.5, -1.3); F('table_low', -3.3, 0.5); F('pithos', -3.5, -2.7); F('amphora', -2.6, -2.8);
+    ph.chest = F('chest', 3.55, -2.2, -PI / 2); F('workbench', 3.1, 2.4); F('shield_stack', 1.9, -2.6); F('shield', 2.45, -3.06, 0, 1.1); F('pithos', 0.2, -2.7);
+    // the curtain across the room, with a way through at the street side
+    const cloth = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 2.3, 14, 1), new THREE.MeshLambertMaterial({ color: 0x7a3b2e, side: THREE.DoubleSide })), cp = cloth.geometry.attributes.position;
+    for (let i = 0; i < cp.count; i++) cp.setZ(i, 0.07 * Math.sin(cp.getX(i) * 7));
+    cloth.geometry.computeVertexNormals();
+    { const [x, z] = ph.at(1.25, -0.9); cloth.position.set(x, sy + 1.2, z); cloth.rotation.y = R; w.group.add(cloth); }
   }
   sites.stoa = P('stoa', -33.5, -4, E);
   sites.shrine = P('shrine', 45, -6, Wd);
@@ -235,7 +294,10 @@ export function buildLayout(game) {
 
   game.mapLabels = [{ text: 'Harbor', x: 0, z: 47 }, { text: 'Agora', x: 0, z: -4 }, { text: 'House of Cephalus', x: -50, z: -60 }, { text: 'Shrine of Bendis', x: 52, z: 6 }, { text: 'Schoolroom', x: 17, z: -31 }, { text: 'Shield workshop', x: -24, z: -64 }, { text: 'Ship captain’s house', x: 18, z: 31 }, { text: 'North gate', x: 0, z: -88 },
     { text: 'Cave hill', x: -40, z: -246 }, { text: 'Stone seat', x: -14, z: -206 }, { text: 'Site of the city in speech', x: 130, z: -182 },
-    { text: 'Shepherd’s hut', x: lyd[0] - 6, z: lyd[1] - 26, lydia: true }, { text: 'The king’s hall', x: lyd[0] - 28, z: lyd[1] + 36, lydia: true }, { text: 'Pasture', x: lyd[0] + 26, z: lyd[1] - 24, lydia: true }];
+    { text: 'Shepherd’s hut', x: lyd[0] - 6, z: lyd[1] - 26, lydia: true }, { text: 'The king’s hall', x: lyd[0] - 28, z: lyd[1] + 36, lydia: true }, { text: 'Pasture', x: lyd[0] + 26, z: lyd[1] - 24, lydia: true },
+    // the four folds of the nights before and after the ring (story_ring_nights.js)
+    { text: 'Your fold', x: lyd[0] - 6, z: lyd[1] - 34, lydia: true }, { text: 'Old shepherd’s fold', x: lyd[0] + 10, z: lyd[1] - 42, lydia: true },
+    { text: 'Young shepherd’s fold', x: lyd[0] - 30, z: lyd[1] - 10, lydia: true }, { text: 'Big shepherd’s fold', x: lyd[0] + 22, z: lyd[1] + 6, lydia: true }];
   return sites;
 }
 

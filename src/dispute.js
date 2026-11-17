@@ -3,7 +3,23 @@ import { $, el } from './util.js';
 import { CARDS, CARD_BY_ID } from './cards.js';
 import { READERS, DISPUTES, TENSIONS, SOURCES, STORY, WORDS } from './content.js';
 
-const TRIES = 3;
+const TRIES = 3;   // no longer a limit (see PARTS below); kept so that old saved games still load
+
+// Which part of a reader's claim each objection goes against: the numbers count the reader's claim sentences from 0.
+// When a player puts a passage to a reader, the reader asks which part of the view it goes against, and the player
+// has to find it. This replaced a limit of three failed objections (2026-11-16, from the review Roman passed on:
+// replace the limit with "What part of my claim does that challenge?"). The labels are the game's own reading of its
+// own sentences, and are not taken from the books the readers speak for. Where an objection fairly bears on two parts,
+// both are accepted.
+const PARTS = {
+  ring: { kleio: { compact: [0], ringback: [2] }, dromon: { disown: [1, 2], godlike: [1, 2] }, sannion: { godlike: [2], disown: [2] } },
+  poetry: { phanias: { wreath: [2], theuth: [0, 2] }, kleio: { couches: [2] }, sannion: { homer: [2], couches: [1, 2] }, dromon: { begin: [2], quarrel: [2] } },
+  writing: { phanias: { theuth: [0, 2] }, kleio: { persuade: [1, 2] }, theano: { theuth: [1] }, sannion: { theuth: [1] } },
+  cave: { kleio: { key: [0, 1] }, sannion: { key: [0, 1], turn: [0, 1] }, archedemos: { likeus: [0, 1] }, theano: { dragged: [0, 1] } },
+  back: { kleio: { least: [1], worse: [1, 2] }, sannion: { prizes: [0] }, archedemos: { godown: [0, 2] }, theano: { fifty: [1, 2] }, dromon: { least: [1, 2] } },
+  city: { dromon: { heaven: [0, 2], model: [0, 2] }, sannion: { kings: [0, 2] }, kleio: { kings: [0, 1] }, archedemos: { noble: [0, 1], heaven: [0, 1] }, phanias: { kings: [0, 2], ten: [0, 2] }, theano: { heaven: [1] } },
+};
+const NTH = ['The first thing you said', 'The second thing you said', 'The third thing you said', 'The fourth thing you said', 'The fifth thing you said'];
 
 function state(g, id) {
   if (!g.disputeState[id]) g.disputeState[id] = { heard: [], asked: [], plain: [], pressed: {}, misses: 0, wax: TRIES, vote: null, done: false };
@@ -28,7 +44,6 @@ export async function runDispute(g, id) {
   if (st.done) return st.vote;
   const hand = () => D.hand.filter((c) => g.cards.includes(c)).map((c) => CARD_BY_ID[c]);
   const firstEver = !g.flags.disputeTaught;
-  g.ui.wax(st.wax, TRIES);
   if (!st.started) {
     st.started = true;
     if (firstEver) {
@@ -49,7 +64,6 @@ export async function runDispute(g, id) {
       break;
     }
     await hearReader(g, id, D.readers[pick], hand);
-    g.ui.wax(st.wax, TRIES);
   }
   // The vote.
   if (firstEver) await guide(g, 'In Athens people vote by dropping a pebble in a jar. So, whose jar gets yours? Nobody is going to tell you which of them is right.', 'happy');
@@ -74,12 +88,12 @@ async function hearReader(g, id, r, hand) {
   if (!g.flags.disputeTaught) {
     g.flags.disputeTaught = true;
     if (await guide(g, r.plain, 'think')) st.plain.push(r.who);
-    await g.say('', 'You can ask ' + R.name + ' why, or ask Mika what she makes of it. You can also object. To object, pick the passage from your journal that this view has the most trouble with. A good objection gets an honest answer. A passage that does not fit costs you one of your three tries.');
+    await g.say('', 'You can ask ' + R.name + ' why, or ask Mika what she makes of it. You can also put a passage from your journal to ' + R.name + '. ' + R.name + ' will ask which part of the view the passage goes against. If you find the place, you get an honest answer. If you get it wrong, you are told so, and you can try again.');
   }
   for (;;) {
-    const canObject = st.wax > 0 && hand().length > 0, mika = hasGuide(g), told = st.plain.includes(r.who);
+    const canObject = hand().length > 0, mika = hasGuide(g), told = st.plain.includes(r.who);
     const o = [{ text: 'Why do you think that?', note: st.asked.includes(r.who) ? 'You have asked this.' : '', k: 'why' },
-      { text: 'Object with a passage', note: canObject ? '' : (st.wax > 0 ? 'You have no passages for this yet.' : 'You have used your three tries.'), k: 'object' }];
+      { text: 'Put a passage to ' + R.name, note: canObject ? '' : 'You have no passages for this yet.', k: 'object' }];
     if (mika) o.push({ text: 'Ask Mika what she makes of it', note: told ? 'She has an idea for an objection.' : '', k: 'mika' });
     o.push({ text: 'Hear someone else', k: 'leave' });
     const c = o[await g.choose(o, { prompt: R.name + ' is waiting for your answer.', name: R.name })].k;
@@ -91,12 +105,18 @@ async function hearReader(g, id, r, hand) {
       if (!told) { st.plain.push(r.who); await guide(g, r.plain, 'think'); }
       else await guide(g, r.hint, 'think');
     } else if (c === 'object') {
-      if (!canObject) { await g.say('', st.wax > 0 ? 'You have no passages that bear on this yet.' : 'You have used your three tries here. Listen to the rest, and then decide.'); continue; }
-      const cardId = await g.ui.pickCard(hand(), 'Which passage is a problem for ' + R.name + '?', 'Pick the passage that this view has the most trouble explaining.');
+      if (!canObject) { await g.say('', 'You have no passages that bear on this yet.'); continue; }
+      const cardId = await g.ui.pickCard(hand(), 'Which passage do you want to put to ' + R.name + '?', R.name + ' will ask which part of the view it goes against.');
       if (!cardId) continue;
       g.stats.objections++;
-      const card = CARD_BY_ID[cardId], t = r.troubles[cardId];
-      if (t) {
+      const card = CARD_BY_ID[cardId], t = r.troubles[cardId], sup = r.supports[cardId], parts = (PARTS[id] && PARTS[id][r.who] && PARTS[id][r.who][cardId]) || null;
+      await g.say('you', 'What about this passage? “' + card.title + '.”');
+      // The reader asks which part of the claim the passage goes against. A wrong answer costs nothing but the correction.
+      const body = r.claim.map((line, i) => ({ text: NTH[i] || 'Another thing you said', note: line }));
+      body.push({ text: 'None of it. It backs you up.', note: '' });
+      const pick = await g.choose(body, { prompt: 'Which part of what I said does that go against?', name: R.name });
+      const backs = pick === r.claim.length, miss = () => { g.audio.blip('bad'); st.misses++; g.stats.misses++; g.log.push({ t: 'attempt', skill: 'evidence', correct: false, dispute: id, who: r.who, card: cardId }); };
+      if (t && !backs && (!parts || parts.includes(pick))) {
         const first = !(st.pressed[r.who] || []).includes(cardId);
         g.audio.blip('good'); g.stats.hits += first ? 1 : 0;
         if (first) (st.pressed[r.who] || (st.pressed[r.who] = [])).push(cardId);
@@ -104,14 +124,20 @@ async function hearReader(g, id, r, hand) {
         await g.say('you', t.you);
         await lines(g, r.who, t.reply, t.cite ? 'Source: ' + t.cite : null);
         if (first) g.ui.toast('Weak spot found', R.name + ' on “' + card.title + '”');
+      } else if (t) {
+        miss();
+        await g.say(r.who, backs ? 'I wish it did. Read it again. I think it goes against something I said.' : 'That passage does give me trouble, but not there. Look again at what I said.');
+      } else if (sup && backs) {
+        const agreed = st.agreed || (st.agreed = {}), first = !(agreed[r.who] || []).includes(cardId);
+        g.audio.blip('good'); if (first) { (agreed[r.who] || (agreed[r.who] = [])).push(cardId); g.stats.agreed = (g.stats.agreed || 0) + 1; }
+        g.log.push({ t: 'attempt', skill: 'evidence', correct: true, dispute: id, who: r.who, card: cardId, kind: 'supports' });
+        await g.say(r.who, sup);
+        if (first) g.ui.toast('Common ground found', R.name + ' on “' + card.title + '”');
       } else {
-        g.audio.blip('bad'); st.wax--; st.misses++; g.stats.misses++;
-        g.log.push({ t: 'attempt', skill: 'evidence', correct: false, dispute: id, who: r.who, card: cardId });
-        await g.say('you', 'What about this passage? “' + card.title + '.”');
-        await g.say(r.who, r.supports[cardId] || 'I don’t see how that passage is a problem for what I said.');
-        g.ui.wax(st.wax, TRIES);
-        if (st.misses >= 2 && !st.hinted) { st.hinted = true; if (!(await guide(g, 'Look for a passage that says the opposite of what ' + R.name + ' just claimed. ' + r.hint, 'think'))) await g.say('', 'A passage is a problem for a view when the view says one thing and the passage seems to say the opposite.'); }
+        miss();
+        await g.say(r.who, sup || (backs ? 'I don’t see that it has much to do with what I said, one way or the other.' : 'I don’t see how that passage is a problem for what I said.'));
       }
+      if (st.misses >= 2 && !st.hinted) { st.hinted = true; if (!(await guide(g, 'Look for a passage that says the opposite of what ' + R.name + ' just claimed. ' + r.hint, 'think'))) await g.say('', 'A passage is a problem for a view when the view says one thing and the passage seems to say the opposite.'); }
     } else return;
   }
 }
@@ -193,7 +219,7 @@ export function showDebrief(g, extra) {
   if (extra && extra.length) { body.append(el('h3', null, 'What you did')); for (const line of extra) body.append(el('p', null, line)); }
   const s = g.stats, tried = s.hits + s.misses;
   body.append(el('h3', null, 'How you argued'));
-  body.append(el('p', null, 'You asked “why” ' + s.asked + ' times and objected with a passage ' + tried + ' times. ' + s.hits + ' of those objections found a real weak spot.' + (tried >= 4 && s.hits / tried >= 0.6 ? ' You were checking what people claimed against what was actually said, and that is how these arguments are meant to be tested.' : tried < 3 ? ' You mostly listened. Next time, try to catch each reader out with a passage.' : '')));
+  body.append(el('p', null, 'You asked “why” ' + s.asked + ' times and put a passage to a reader ' + (tried + (s.agreed || 0)) + ' times. ' + s.hits + ' of those found a real weak spot' + (s.agreed ? ', and ' + s.agreed + ' showed that you saw a passage backing a view up' : '') + '.' + (tried >= 4 && s.hits / tried >= 0.6 ? ' You were checking what people claimed against what was actually said, and that is how these arguments are meant to be tested.' : tried < 3 ? ' You mostly listened. Next time, try to catch each reader out with a passage.' : '')));
   const ten = tensionsFor(g);
   body.append(el('h3', null, 'Where your choices pull against each other'));
   if (ten.length) ten.forEach((t) => body.append(el('p', null, t)));

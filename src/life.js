@@ -8,6 +8,15 @@ const PI = Math.PI, E = PI / 2, W = -PI / 2, N = PI, S = 0;   // which way a sce
 const PLACES = [
   // ---- the harbor
   ['porters', -57.5, 60, N, { path: [[0, 0], [-1.5, 10], [-7, 22]] }],
+  // ---- where the player lands (layout.js, the ship at the middle of the quay): the cargo coming off, children,
+  // gulls over the mast, and buyers at the two stalls at the mouth of the main street
+  ['porters', 7.4, 56.4, N, { path: [[0, 0], [-3, 4.5], [-9.5, 9.5]] }],
+  ['gulls', 2, 73, 1],
+  ['children_chasing', -17, 45.6, 0],
+  ['stall_seller', -8.4, 36.6, E],
+  ['shoppers', -4.2, 36.6, W],
+  ['stall_seller', 8.8, 37.2, W],
+  ['shoppers', 4.6, 37.2, E],
   ['net_menders', 71, 47.5, S],
   ['fishmonger', 24, 50.5, N],
   ['shipwright', 86, 47, W],

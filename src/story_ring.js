@@ -6,6 +6,7 @@ import { PLACES, terrainParams } from './world.js';
 import { buildFigure, makeProp } from './actors.js';
 import { Animal } from './animals.js';
 import { runDispute } from './dispute.js';
+import { setupNights } from './story_ring_nights.js';
 
 const PI = Math.PI;
 export const VISITOR = { skin: 'tan', hair: 0x3a2a1c, beard: 'short', robe: 0xd8cdb0, robe2: 0x6f7f8a, hat: 'wreath' };
@@ -16,7 +17,7 @@ export function setLook(g, spec) {
 }
 export function setInvisible(g, on) {
   g.invisible = on; g.player.shadows(!on);
-  for (const m of new Set([g.player.material, g.player.material2])) { if (!m || !g.player.spec.ownMaterial) continue; m.transparent = on; m.opacity = on ? 0.2 : 1; m.depthWrite = !on; m.needsUpdate = true; }
+  g.player.setGhost(on);   // a pale see-through figure; the world also loses color (game.js, post.unseen)
 }
 
 export function setupRing(g, api) {
@@ -67,15 +68,38 @@ export function setupRing(g, api) {
     for (const n of g.npcs.values()) if (n.space === 'lydia') n.behavior = on ? 'ignore' : 'idle';
     g.ui.hint(on ? 'The stone is turned toward your palm. Nobody can see you. Press R to turn it back.' : 'The stone is turned outward. People can see you. Press R to turn it.');
   }
+  // The grass and ground cover over the crack go down (and back up) with the ground.
+  const reseat = () => { if (g.scatter) g.scatter.reseat(S.chasm.x, S.chasm.z, 20); if (g.kit.flora && g.kit.flora.reseat) g.kit.flora.reseat(S.chasm.x, S.chasm.z, 20); };
   const lydia = (o) => Object.assign({ space: 'lydia' }, o);
   const showAll = (v) => { for (const n of g.npcs.values()) if (n.space === 'lydia') n.show(v); };
   const told = { noFocus: true };   // Glaucon's voice while his story plays
+  // The three nights (story_ring_nights.js): no rule, the pact, the ring. They hand back to this file twice.
+  const daySheep = (v) => { for (const s of sheep) s.a.group.visible = v; };
+  let nights = null;
+  nights = g.nights = setupNights(g, { told, log, api, daySheep,
+    // after the second night: the day of the storm
+    onDay: async (gg) => {
+      stage = 1; gg.env('lydia', 0); daySheep(true); gg.teleport('lydia', S.hut.x + 5, S.hut.z + 4, 0.9);
+      gg.objective('Walk out to your sheep', { x: S.chasm.x - 6, z: S.chasm.z + 8, label: 'Your sheep', space: 'lydia' });
+      await gg.ui.fade(0, 0.6);
+      await gg.say('glaucon', 'Then one day he was out with his sheep, the same as any other day.', told);
+    },
+    // after the third night: the report to the king, and the hall
+    onMonthEnd: async (gg) => {
+      await gg.say('glaucon', 'By then he was sure of the ring. So he got himself chosen as one of the messengers who carry the report to the king.', told);
+      await gg.ui.fade(1, 0.6); gg.env('lydia', 0); daySheep(true); if (gg.invisible) toggleRing(false); await gg.ui.fade(0, 0.6);
+      stage = 4; ringKeyOn = true;
+      gg.ui.hint('Press R to turn the ring. With the stone turned in, nobody can see you. What you do now is up to you.');
+      gg.objective('Go to the king’s hall and do what you like there. When you have finished, go home to your hut. You can also put the ring back where you found it.', { x: S.palaceGate.x + 3, z: S.palaceGate.z, label: 'The king’s hall', space: 'lydia' });
+    } });
 
   // ---- Glaucon begins
   g.npc('glaucon').talk = async (gg) => {
     gg.flags.met_glaucon = true;
     if (!gg.flags.book1) { await gg.say('glaucon', 'I’m Glaucon. Hear my host and his guests first. My part of last night comes after theirs.'); return; }
     if (gg.flags.ring) { await gg.say('glaucon', 'I asked Socrates to show that doing right is worth it even with the ring on. He spent the rest of the night trying. Go and hear what he came up with.'); return; }
+    // First the lost hound (story_hound.js): he tells nothing until she is back.
+    if (gg.errand && gg.errand.hound && !gg.flags.hound) { if (!(await gg.errand.hound(gg))) return; }
     gg.ui.area('Glaucon’s dare', 'Why do right, if nobody would ever know?');
     await gg.lines([
       ['glaucon', 'When Thrasymachus gave up, I wasn’t satisfied, and I told Socrates so.', 'think'],
@@ -88,42 +112,44 @@ export function setupRing(g, api) {
     await gg.say('glaucon', ['That’s braver than Socrates. He said both.', 'That’s what Socrates said.', 'That’s what most people think, and it’s the side I argued.'][c], { mood: 'happy' });
     api.giveCards(gg, ['goods']);
     await gg.lines([
-      ['glaucon', 'Here is how most people see it. Everyone would like to cheat and take what they want. But being cheated is much worse than cheating is good.'],
-      ['glaucon', 'So the people who aren’t strong enough to get away with it make a deal: I won’t wrong you if you don’t wrong me. They write the deal into laws, and they call keeping it “doing right”.'],
-      ['glaucon', 'On that view, nobody is fair because they want to be. They are fair because otherwise they would be caught. Take away the chance of getting caught, and you would see what people are really like.', 'think'],
+      ['glaucon', 'Here is how most people see it. Nobody is fair because they want to be. They are fair because otherwise they would be caught.'],
+      ['glaucon', 'Take away the chance of getting caught, and you would see what people are really like.', 'think'],
       ['mika', 'Nobody saw me this morning.', 'afraid'],
-      ['glaucon', 'There’s an old story about exactly that. It’s about a shepherd in Lydia, across the sea. I’ll tell it so that you see it through his eyes.', 'happy']]);
-    api.giveCards(gg, ['compact']);
+      ['glaucon', 'There’s an old story about exactly that. It’s about a shepherd in Lydia, across the sea. I won’t just tell it. I’ll put you in it, and we’ll see what you do.', 'happy']]);
     await enterStory(gg);
   };
 
   async function enterStory(gg) {
     await gg.ui.fade(1, 0.9);
-    stage = 1; gg.flags.inStory = true; gg.flags.ringLog = {};
-    terrainParams.chasm = 0; w.reshape(S.chasm.x, S.chasm.z, 20);
+    stage = 0.5; gg.flags.inStory = true; gg.flags.ringLog = {};
+    terrainParams.chasm = 0; w.reshape(S.chasm.x, S.chasm.z, 20); reseat();
     if (horse) { horse.visible = false; }
-    setLook(gg, SHEPHERD); crook = gg.player.attach('handR', makeProp('crook'));
-    gg.busyEnv = true; gg.env('lydia', 0);
-    gg.teleport('lydia', S.hut.x + 5, S.hut.z + 4, 0.9);
+    // The crook is carried upright in front of him (the activity 'herd'). It used to be fixed to his hand and
+    // swung with the arm, level like a lance when he ran.
+    setLook(gg, SHEPHERD); gg.player.setActivity('herd'); crook = true;
+    gg.busyEnv = true;
     showAll(true); gg.npc('prisoner').show(true); cage.visible = true; cageCol.off = false;
     gg.ui.area('Lydia', 'A story Glaucon is telling. You are the shepherd.');
-    gg.objective('Walk out to your sheep', { x: S.chasm.x - 6, z: S.chasm.z + 8, label: 'Your sheep', space: 'lydia' });
+    await nights.begin(gg);
     await gg.ui.fade(0, 0.9);
-    await gg.say('glaucon', 'He looked after sheep for the king of Lydia. One day he was out with them, the same as any other day.', told);
+    await gg.say('glaucon', 'He looked after sheep for the king of Lydia.', told);
+    await nights.intro(gg);
   }
 
   // ---- the storm and the crack in the ground
   g.addTrigger(lydia({ x: S.chasm.x - 6, z: S.chasm.z + 8, r: 7, when: () => stage === 1, run: async (gg) => {
     stage = 2;
-    gg.env('storm', 2.5); gg.audio.blip('quake');
+    gg.env('storm', 2.5); gg.wait(1.3).then(() => gg.lightning());   // lightning once the sky has darkened, then its thunder
     await gg.say('glaucon', 'There was a terrible storm, and then an earthquake.', told);
     gg.shake = 1.2; gg.audio.blip('quake');
-    if (gg.ui.auto) { terrainParams.chasm = 1; w.reshape(S.chasm.x, S.chasm.z, 20); }
-    else for (let i = 1; i <= 10; i++) { terrainParams.chasm = i / 10; w.reshape(S.chasm.x, S.chasm.z, 20); await gg.wait(0.16); }
+    if (gg.ui.auto) { terrainParams.chasm = 1; w.reshape(S.chasm.x, S.chasm.z, 20); reseat(); }
+    else for (let i = 1; i <= 10; i++) { terrainParams.chasm = i / 10; w.reshape(S.chasm.x, S.chasm.z, 20); reseat(); await gg.wait(0.16); }
     for (const sh of sheep) { const dx = sh.x - S.chasm.x, dz = sh.z - S.chasm.z, d = Math.hypot(dx, dz) || 1; if (d < 16) { sh.x = S.chasm.x + dx / d * 17; sh.z = S.chasm.z + dz / d * 17; sh.tx = sh.x; sh.tz = sh.z; } }
     const hy = w.terrainY(S.chasm.x, S.chasm.z);
-    if (!horse) horse = gg.kit.spawn('bronze_horse', S.chasm.x, S.chasm.z, 0.7, { zone: 'lydia', y: hy });
-    horse.visible = true; horse.position.y = hy;
+    // The second horse model (blender/assets_horse.py): a horse's proportions, cast larger than life, with a window in
+    // each flank and the dead man's hand and ring showing inside.
+    if (!horse) horse = gg.kit.spawn('bronze_steed', S.chasm.x, S.chasm.z, 0.7, { zone: 'lydia', y: hy, scale: 0.9 });
+    horse.visible = true; horse.position.y = hy; gg.lightning(0.9);   // a second, farther strike over the open ground
     await gg.say('glaucon', 'The ground split open right where his sheep were grazing. He was amazed, and he climbed down to look.', told);
     gg.objective('Climb down into the crack in the ground', { x: S.chasm.x, z: S.chasm.z, label: 'The crack', space: 'lydia' });
     gg.env('lydia', 14);
@@ -155,10 +181,9 @@ export function setupRing(g, api) {
     await gg.say('', 'They are talking about you as if you had left. You turn the stone back outward.');
     toggleRing(false);
     await gg.say('shep0', 'Oh, there you are. We didn’t see you come back.', { mood: 'surprised' });
-    await gg.say('glaucon', 'He tried it a few more times. Stone turned in, nobody could see him. Stone turned out, there he was. So he got himself chosen as one of the messengers who report to the king.', told);
-    stage = 4; ringKeyOn = true;
-    gg.ui.hint('Press R to turn the ring. With the stone turned in, nobody can see you. What you do now is up to you.');
-    gg.objective('Go to the king’s hall and do what you like there. When you have finished, go home to your hut. You can also put the ring back where you found it.', { x: S.palaceGate.x + 3, z: S.palaceGate.z, label: 'The king’s hall', space: 'lydia' });
+    await gg.say('glaucon', 'He tried it a few more times. Stone turned in, nobody could see him. Stone turned out, there he was.', told);
+    stage = 3.5; ringKeyOn = true;
+    await nights.third(gg);
   } }));
 
   // ---- the hall
@@ -166,9 +191,10 @@ export function setupRing(g, api) {
   g.addTrigger(lydia({ x: hallX + 7.2, z: hallZ, r: 4.2, when: () => stage === 4 && !g.invisible && !log().appeared, run: async (gg) => {
     await gg.say('lguard0', 'Messengers wait out here. Nobody goes in to the king without being called.');
   } }));
-  g.addSpot(lydia({ x: S.chest.x + 0.9, z: S.chest.z, r: 2.4, label: 'Take gold from the chest', when: () => stage === 4 && g.invisible && !log().gold, run: async (gg) => {
-    log().gold = true; gg.audio.blip('card');
-    await gg.say('', 'You stuff your tunic with the king’s gold. Nobody even looks round.');
+  g.addSpot(lydia({ x: S.chest.x + 0.9, z: S.chest.z, r: 2.4, label: () => (log().goldN ? 'Take more gold' : 'Take gold from the chest'), when: () => stage === 4 && g.invisible && (log().goldN || 0) < 8, run: async (gg) => {
+    const l = log(); l.gold = true; l.goldN = (l.goldN || 0) + 1; nights.loot(10);
+    if (l.goldN === 1) await gg.say('', 'You stuff your tunic with the king’s gold. Nobody even looks round.');
+    else if (l.goldN === 8) await gg.say('', 'You cannot carry any more.');
   } }));
   g.addSpot(lydia({ x: S.throne.x + 3.2, z: S.throne.z - 2.4, r: 3, label: 'Listen to the king and queen', when: () => stage === 4 && g.invisible && !log().heard && !log().queen, run: async (gg) => {
     log().heard = true;
@@ -215,11 +241,13 @@ export function setupRing(g, api) {
   async function endStory(gg, how) {
     log().end = how; stage = 0; ringKeyOn = false;
     await gg.ui.fade(1, 0.9);
-    setInvisible(gg, false); setLook(gg, VISITOR); if (crook) { crook.parent.remove(crook); crook = null; }
+    nights.stop(); setInvisible(gg, false); setLook(gg, VISITOR); if (crook) { gg.player.setActivity(null); crook = null; }
     showAll(false); gg.npc('king').actor.extra = null;
     gg.ui.hint(null); gg.busyEnv = false; gg.flags.inStory = false;
-    const C = S.cephalus; gg.teleport('world', C.x - 0.4, C.z - 1.4, PI);
-    gg.npc('glaucon').put(C.x - 0.6, C.z - 3.1, 0);
+    // Back to where Glaucon told it: outside the north gate once he has gone there, otherwise the courtyard.
+    const C = S.cephalus, H = gg.errand && gg.errand.glauconSpot && gg.flags.hound ? gg.errand.glauconSpot : null;
+    if (H) { gg.teleport('world', H.x - 0.4, H.z + 2.4, PI); gg.npc('glaucon').put(H.x, H.z, 0); }
+    else { gg.teleport('world', C.x - 0.4, C.z - 1.4, PI); gg.npc('glaucon').put(C.x - 0.6, C.z - 3.1, 0); }
     gg.env('afternoon', 0); api.refreshObjective(gg);
     await gg.ui.fade(0, 0.9);
     await afterStory(gg);
@@ -228,11 +256,14 @@ export function setupRing(g, api) {
   async function afterStory(gg) {
     const l = log();
     api.giveCards(gg, ['ring', 'fool']);
+    const tookUnseen = await nights.verdict(gg);
     if (l.king) await gg.say('glaucon', 'You did what the shepherd did. The people who tell this story say that proves it: nobody does right because they want to. They do it because they have to.');
     else if (l.gold) await gg.say('glaucon', 'You took the gold and stopped there. The people who tell this story would say you lost your nerve before the bigger crime.');
     else if (l.prisoner) await gg.say('glaucon', 'The only thing you did was let a man out of a cage. Was that right? A court had sentenced him, and you undid it where nobody could see.', { mood: 'think' });
     else if (l.returned) await gg.say('glaucon', 'You put it back. The people who tell this story would say that anyone who knew about it would think you were an idiot. They would praise you to your face, though, because each of them would be afraid you might cheat him one day.');
-    else await gg.say('glaucon', 'You kept it and didn’t use it. They would call you a fool. They would also say you’re only waiting.');
+    else if (!tookUnseen) await gg.say('glaucon', 'You kept it and didn’t use it. They would call you a fool. They would also say you’re only waiting.');
+    if (l.prisoner && (l.king || l.gold)) await gg.say('glaucon', 'You also let a man out of the king’s cage, where nobody could see who did it.');
+    if (l.heard) await gg.say('glaucon', 'And you stood and listened to two people who thought they were alone.');
     await gg.say('glaucon', 'One more thing. The shepherd really was unseen. You weren’t. I was telling the story, and you knew I would hear how it ended.', { mood: 'think' });
     const c = await gg.choose(['I would have done the same with nobody watching.', 'I honestly don’t know what I would do with nobody watching.', 'Then you can’t test this story on anyone who hears it told.']);
     l.said = c;
@@ -256,6 +287,7 @@ export function setupRing(g, api) {
       ['glaucon', 'Socrates didn’t answer straight away. He said that what doing right does inside one person is hard to see, like tiny writing a long way off.'],
       ['glaucon', 'So he would look at a whole city first, where the same thing is written in bigger letters. That is how we came to spend the night building a city out of words.', 'happy']]);
     api.giveCards(gg, ['letters']);
+    if (gg.errand && gg.errand.roadLead) await gg.errand.roadLead(gg);   // the fourth lead on Bion
     await gg.say('glaucon', 'Not everyone who was here agrees about what my story shows. Some of them are still about.');
     await api.gather(gg, ['kleio', 'dromon', 'sannion']);
     await gg.say('kleio', 'Before we start, you should know one thing. I stayed until dawn, and right at the end Socrates came back to the ring.', { mood: 'think' });

@@ -16,7 +16,7 @@ const FALLBACK = {
   brazier: [0.6, 1.1, 0.6], torch_post: [0.3, 2.6, 0.3], column_single: [0.9, 4.5, 0.9], exedra: [5, 0.9, 2.8], milestone: [0.4, 1, 0.25],
   olive_a: [5, 5.5, 5], olive_b: [5, 5.5, 5], cypress_a: [1.8, 9, 1.8], cypress_b: [1.5, 6.5, 1.5], pine_a: [6, 8, 6], bush_a: [1.6, 1.2, 1.4], bush_b: [1.8, 1.6, 1.6],
   grass_tuft: [0.5, 0.4, 0.5], rock_a: [1.2, 0.8, 1], rock_b: [2.5, 1.6, 2], rock_c: [4.5, 2, 3.5], cliff_a: [10, 8, 6], cave_mouth: [11, 8, 5],
-  bronze_horse: [1.3, 3.8, 4.2], sheep: [0.55, 0.8, 1.1], throne: [1.2, 2.2, 1], chest: [1.1, 0.8, 0.7],
+  bronze_horse: [1.3, 3.8, 4.2], bronze_steed: [1.24, 3.61, 4.49], sheep: [0.55, 0.8, 1.1], throne: [1.2, 2.2, 1], chest: [1.1, 0.8, 0.7],
   school: [9.5, 5.8, 7.8], klismos: [0.56, 0.95, 0.62], school_bench: [2.6, 0.43, 0.38], wall_a: [2.5, 0.6, 0.2], wall_b: [2.2, 0.9, 0.2], tablet_set: [0.44, 0.03, 0.3], scroll_bin: [0.4, 0.5, 0.4], bone_basket: [0.3, 0.1, 0.24],
   workshop: [12.8, 6.2, 8.8], shield: [0.9, 0.94, 0.16], shield_stack: [0.9, 0.4, 0.9], workbench: [2, 0.95, 0.9], stump_anvil: [0.75, 0.82, 0.75], forge: [1.7, 0.9, 1], loom: [1.9, 2.05, 0.95], wool_basket: [0.42, 0.5, 0.42],
 };

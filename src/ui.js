@@ -21,6 +21,9 @@ export class UI {
   say(name, text, opts = {}) {
     if (this.auto) { this.g.log.push({ t: 'say', name, text }); return Promise.resolve(); }
     const box = $('dialogue'); box.classList.remove('hidden');
+    // A line with no speaker is narration. It is drawn differently from speech (italic, centered, on a dark band),
+    // because Roman found that it "blends too easy with dialogue" (2026-11-16).
+    box.classList.toggle('narr', !name); box.classList.remove('wasNarr');
     $('choices').innerHTML = ''; this.choiceEls = [];
     const nm = $('dlgName'); nm.innerHTML = '';
     if (name) { nm.append(document.createTextNode(name)); if (opts.role) nm.append(el('em', null, opts.role)); }
@@ -45,6 +48,9 @@ export class UI {
     const opt = options.map((o) => (typeof o === 'string' ? { text: o } : o));
     if (this.auto) { const i = clamp(this.auto('choose', opt, opts) | 0, 0, opt.length - 1); this.g.log.push({ t: 'choose', options: opt.map((o) => o.text), pick: i }); return Promise.resolve(i); }
     const box = $('dialogue'); box.classList.remove('hidden');
+    // The choices are always on the paper box. Narration left above them, or a prompt with no speaker, stays italic.
+    const it = opts.prompt != null ? !opts.name : box.classList.contains('narr') || box.classList.contains('wasNarr');
+    box.classList.remove('narr'); box.classList.toggle('wasNarr', it);
     $('dlgNote').textContent = '';
     if (opts.prompt != null) { $('dlgName').textContent = opts.name || ''; $('dlgText').textContent = opts.prompt; }
     $('dlgMore').textContent = 'Press a number, or click';

@@ -215,6 +215,14 @@ export class Scatter {
     this.total = Object.fromEntries(Object.entries(this.kinds).map(([k, K]) => [k, K.list.length]));
   }
 
+  // Put the ground cover near a point back on the ground after the ground has changed shape (the crack in the ring
+  // story drops it by up to 5.5 m; the tufts used to stay where they were, in the air).
+  reseat(x, z, radius) {
+    const w = this.g.world, r2 = radius * radius;
+    for (const K of Object.values(this.kinds)) K.list.forEach((p, i) => { const dx = p.x - x, dz = p.z - z; if (dx * dx + dz * dz > r2) return; p.y = w.standY(p.x, p.z); K.mats[i * 16 + 13] = p.y; });
+    this.last.set(1e9, 1e9); this.queue = null;   // draw them again from the new heights
+  }
+
   // Refill the near set when the eye has moved more than 6 m: one kind per frame, so the work is spread over
   // four frames, with an 8 m margin so nothing near the eye is missing meanwhile.
   update(eye, dt) {

@@ -38,6 +38,67 @@ export class Audio {
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g); g.connect(this.master); o.start(t); o.stop(t + dur + 0.03);
   }
+  // A burst of the shared noise through two filters that slide from f0 to f1. Thunder and the earthquake are made
+  // of these. (They used to be one low sawtooth tone, which Roman said "sounds like a fart", 2026-11-15: a laptop's
+  // speakers cannot play a 55 Hz tone, so only its buzz came through.)
+  burst(at, dur, f0, f1, vol, type = 'lowpass', q = 0.7, attack = 0.02, buf = this.noise) {
+    const c = this.ctx, t = c.currentTime + at, s = c.createBufferSource(), f = c.createBiquadFilter(), f2 = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = buf; s.loop = true;
+    for (const x of [f, f2]) { x.type = type; x.Q.value = q; x.frequency.setValueAtTime(f0, t); x.frequency.exponentialRampToValueAtTime(f1, t + dur); }
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(vol, 0.0002), t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f); f.connect(f2); f2.connect(g); g.connect(this.master); s.start(t, Math.random() * 0.8); s.stop(t + dur + 0.1);
+  }
+  // Plain hiss, with as much high sound as low (the shared buffer is mostly low). Thunder is made from this, so that
+  // its crack and the upper part of its roll come through small speakers.
+  whiteNoise() {
+    if (!this.white) { const n = this.ctx.sampleRate, b = this.ctx.createBuffer(1, n, n), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; this.white = b; }
+    return this.white;
+  }
+  // Thunder: a sharp crack, a clap, and then a roll that swells and fades several times as it dies away.
+  thunder(vol = 1) {
+    if (!this.ctx || !this.on) return;
+    const W = this.whiteNoise();
+    this.burst(0, 0.2, 4200, 1300, 0.7 * vol, 'bandpass', 0.6, 0.003, W);          // the crack
+    this.burst(0.015, 1.0, 2600, 320, 0.75 * vol, 'lowpass', 0.6, 0.01, W);        // the clap
+    let at = 0.2, v = 1.5 * vol;                                                   // the roll
+    for (let i = 0; i < 7; i++) { const d = 0.8 + Math.random() * 0.9; this.burst(at, d, 650 + Math.random() * 450, 170, v, 'lowpass', 0.7, 0.1 + Math.random() * 0.16, W); at += d * (0.32 + Math.random() * 0.3); v *= 0.74; }
+  }
+  // A hound giving tongue: two short rough notes.
+  bark() {
+    if (!this.ctx || !this.on) return;
+    for (const at of [0, 0.17]) {
+      const c = this.ctx, t = c.currentTime + at, o = c.createOscillator(), g = c.createGain(), f = c.createBiquadFilter();
+      o.type = 'sawtooth'; o.frequency.setValueAtTime(330, t); o.frequency.exponentialRampToValueAtTime(190, t + 0.11);
+      f.type = 'bandpass'; f.frequency.value = 800; f.Q.value = 0.9;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.13, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+      o.connect(f); f.connect(g); g.connect(this.master); o.start(t); o.stop(t + 0.15);
+    }
+    this.burst(0, 0.1, 2200, 700, 0.07, 'bandpass', 1.2, 0.005);
+  }
+  // A sheep's bleat: a reedy tone with a tremble in it.
+  baa() {
+    if (!this.ctx || !this.on) return;
+    const c = this.ctx, t = c.currentTime, o = c.createOscillator(), g = c.createGain(), f = c.createBiquadFilter(), l = c.createOscillator(), lg = c.createGain();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(430, t); o.frequency.linearRampToValueAtTime(350, t + 0.5);
+    l.frequency.value = 23; lg.gain.value = 30; l.connect(lg); lg.connect(o.frequency);
+    f.type = 'bandpass'; f.frequency.value = 1150; f.Q.value = 1.2;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.1, t + 0.05); g.gain.setValueAtTime(0.1, t + 0.35); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.62);
+    o.connect(f); f.connect(g); g.connect(this.master); o.start(t); l.start(t); o.stop(t + 0.66); l.stop(t + 0.66);
+  }
+  // An earthquake: a deep rumble that builds, shakes, and dies away, with loose stones rattling over it.
+  quake(vol = 1) {
+    if (!this.ctx || !this.on) return;
+    const c = this.ctx, t = c.currentTime;
+    const s = c.createBufferSource(), f = c.createBiquadFilter(), f2 = c.createBiquadFilter(), g = c.createGain(), trem = c.createGain(), lfo = c.createOscillator(), lg = c.createGain();
+    s.buffer = this.noise; s.loop = true;
+    for (const x of [f, f2]) { x.type = 'lowpass'; x.Q.value = 0.8; x.frequency.setValueAtTime(240, t); x.frequency.linearRampToValueAtTime(420, t + 1.0); x.frequency.exponentialRampToValueAtTime(130, t + 3.8); }
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.62 * vol, t + 0.9); g.gain.setValueAtTime(0.62 * vol, t + 1.9); g.gain.exponentialRampToValueAtTime(0.0001, t + 4.0);
+    lfo.type = 'triangle'; lfo.frequency.setValueAtTime(13, t); lfo.frequency.linearRampToValueAtTime(7, t + 3.8); lg.gain.value = 0.4; trem.gain.value = 0.6;
+    lfo.connect(lg); lg.connect(trem.gain);
+    s.connect(f); f.connect(f2); f2.connect(trem); trem.connect(g); g.connect(this.master);
+    s.start(t, Math.random()); s.stop(t + 4.2); lfo.start(t); lfo.stop(t + 4.2);
+    for (let i = 0; i < 16; i++) this.burst(0.3 + Math.random() * 2.8, 0.05 + Math.random() * 0.07, 1500 + Math.random() * 2200, 600, 0.03 + 0.1 * vol * Math.random(), 'bandpass', 2.5, 0.003);
+  }
   blip(kind) {
     if (kind === 'next') this.tone(520, 0.07, 'triangle', 0.05);
     else if (kind === 'pick') this.tone(660, 0.09, 'triangle', 0.07);
@@ -46,7 +107,8 @@ export class Audio {
     else if (kind === 'card') { this.pluck(587, 0.5); setTimeout(() => this.pluck(784, 0.7), 120); }
     else if (kind === 'ring') { this.tone(1320, 0.5, 'sine', 0.07); this.tone(1980, 0.7, 'sine', 0.04); }
     else if (kind === 'pebble') this.tone(240, 0.12, 'square', 0.06, -120);
-    else if (kind === 'quake') this.tone(55, 1.6, 'sawtooth', 0.2, -20);
+    else if (kind === 'quake') this.quake();
+    else if (kind === 'thunder') this.thunder();
   }
   // A plucked string (Karplus-Strong), used for the lyre.
   pluck(freq, dur = 0.9, vol = 0.22) {

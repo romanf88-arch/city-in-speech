@@ -8,10 +8,19 @@ export function setupEnd(g, api) {
   g.npc('archedemos').talk = async (gg) => {
     api.meet(gg, 'archedemos');
     const f = gg.flags, atSite = Math.hypot(gg.player.x - S.citySite.x, gg.player.z - S.citySite.z) < 60;
+    // The close of the game: how the errand came out, the last line, and the summary. A player who told Bion they
+    // would take the money from Philokles has the night at his house first (story_theft.js), and this runs after it.
+    const close = async (g2) => {
+      if (g2.errand && g2.errand.epilogue && g2.flags.bion) { await g2.ui.fade(1, 0.8); await g2.ui.fade(0, 0.8); await g2.errand.epilogue(g2); }
+      await g2.say('', 'That is the end of the first part.'); api.refreshObjective(g2); showDebrief(g2, mirror(g2));
+    };
+    const theftDue = () => !!(gg.errand && gg.errand.theftStart && f.bion === 'steal' && !f.theft);
+    if (f.city && theftDue()) { await gg.say('', 'It is dark now, and you told Bion what you would do tonight.'); await gg.errand.theftStart(gg, close); return; }   // a game continued after the last scene, with the night still to come
     if (!f.said_archedemos) { f.said_archedemos = true; await gg.say('archedemos', 'Archedemos. I measure out ground for builders.', { mood: 'happy' }); }
     if (f.city) { await gg.say('archedemos', 'The builders start tomorrow: first the small village, then the bigger city, then the soldiers. Come back for it.'); return; }
     if (!f.book1) { await gg.say('archedemos', 'Go and hear how last night began, at the house of Cephalus. We can talk after that.'); return; }
     if (!(f.ring && f.poetry && f.cave)) { await gg.say('archedemos', 'They talked about founding a city last night, and I want to see where it would go. Hear about the ring, the poets, and the cave first. Then find me at the stakes, east of the road north of the gate.'); return; }
+    if (gg.errand && gg.errand.bionOpen && gg.errand.bionOpen()) { await gg.say('archedemos', 'You have a man to find on the hill west of the cave. Settle that first. I’ll be at the stakes.'); return; }
     if (!atSite) { await gg.say('archedemos', 'Meet me at the stakes, east of the road north of the gate. It’s easier to explain there.'); return; }
     gg.ui.area('The city in words', 'Was it ever meant to be built?');
     await gg.lines([
@@ -55,8 +64,8 @@ export function setupEnd(g, api) {
     gg.audio.phrase([196, 262, 294, 349, 392, 523]);
     for (const id of ['kleio', 'sannion', 'theano', 'dromon', 'phanias']) api.relocate(gg, id, ...HOMES[id]);
     await purse(gg);
-    api.refreshObjective(gg);
-    showDebrief(gg, mirror(gg));
+    if (theftDue()) { await gg.errand.theftStart(gg, close); return; }
+    await close(gg);
   };
 
   // Mika decides what to do with the purse. Nothing here says which choice is right.
@@ -68,6 +77,7 @@ export function setupEnd(g, api) {
     await gg.lines([
       ['mika', 'It’s nearly dark, and he leaves town tomorrow. I have to decide.', 'sad'],
       ['mika', 'I’ve listened all day. Not one of them said I should give it back because I’d be caught. Nobody is going to catch me. That was never the question.', 'think'],
+      ...(f.bion ? [['mika', 'I watched you with Bion’s jar this afternoon. It didn’t look any easier than this.', 'think']] : []),
       ['mika', 'What would you do?', 'plead']]);
     const c = await gg.choose([
       'Give it back. Doing right is worth it even if nobody ever knows.',
@@ -91,35 +101,42 @@ export function setupEnd(g, api) {
       await gg.say('', 'She runs off down the road toward the harbor. It is fully dark by the time she comes back, out of breath.');
       await gg.ui.fade(0, 0.9);
       await gg.lines([
-        ['mika', 'I gave it to him. He counted it. Twice.', 'happy'],
-        ['mika', 'Then he asked what I wanted for bringing it back. I said nothing. And he went red, the way they said he did last night.', 'laugh'],
-        ['mika', 'He told me I was a fool. But he said it quietly.', 'happy'],
+        ['mika', f.purseSpent ? 'I gave it to him. He counted it twice. Seventy.' : 'I gave it to him. He counted it. Twice.', 'happy'],
+        ['mika', f.purseSpent ? 'I told him the other thirty was already in his belt, because you paid him with it this afternoon. And he went red, the way they said he did last night.' : 'Then he asked what I wanted for bringing it back. I said nothing. And he went red, the way they said he did last night.', 'laugh'],
+        ['mika', f.purseSpent ? 'He called me a fool and you a thief. But he said it quietly.' : 'He told me I was a fool. But he said it quietly.', 'happy'],
         ['mika', 'I still can’t say exactly why it was right. I’ll keep working on that part.', 'think']]);
-      f.purseText = 'Mika took the purse back to Thrasymachus. He counted it twice, went red, and called her a fool, quietly. She says she still cannot explain exactly why it was right.';
+      f.purseText = f.purseSpent ? 'Mika took the purse back to Thrasymachus, thirty drachmas short, and told him the thirty was the fee you had paid him out of it. He went red, and called her a fool and you a thief, quietly.' : 'Mika took the purse back to Thrasymachus. He counted it twice, went red, and called her a fool, quietly. She says she still cannot explain exactly why it was right.';
     } else if (end === 'kept') {
       await gg.lines([
-        ['mika', 'All right. I’m keeping it.', 'sad'],
+        ['mika', f.purseSpent ? 'All right. I’m keeping what’s left of it. We spent some of it already, you and I.' : 'All right. I’m keeping it.', 'sad'],
         ['mika', 'My mother can see a doctor now. That’s a good thing, isn’t it? So why does it feel as if I’ve swallowed a stone?', 'sad'],
         ['mika', 'Ask me in a year whether I chose right.', 'think']]);
-      f.purseText = 'Mika kept the purse. She says her mother can see a doctor now, and that it feels as if she has swallowed a stone.';
+      f.purseText = (f.purseSpent ? 'Mika kept the purse, less the thirty drachmas you paid Thrasymachus out of it.' : 'Mika kept the purse.') + ' She says her mother can see a doctor now, and that it feels as if she has swallowed a stone.';
     } else {
       await gg.say('mika', 'Socrates said he still didn’t know what doing right is, after a whole night of talking. I’ve only had a day.', { mood: 'happy' });
       f.purseText = 'Mika has not decided. She is keeping the purse until tomorrow.';
     }
     f.purseEnd = end; api.note(gg, 'What Mika did');
     await gg.say('mika', 'Thank you for walking with me. Find me at the harbor next festival, and I’ll save you a garland.', { mood: 'happy', play: 'wave' });
-    await gg.say('', 'That is the end of the first part.');
   }
 
   // Sentences that tell the player what they did, for the closing summary.
   function mirror(gg) {
     const f = gg.flags, l = f.ringLog || {}, out = [];
+    // The three nights as a shepherd (story_ring_nights.js): what was taken, put back, and given.
+    if (l.nights) {
+      const n = l.nights, sum = (a) => (a || []).reduce((x, y) => x + y, 0), W = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'], w = (k) => W[k] || String(k);
+      const took = sum(n.took), back = sum(n.back), gave = (n.gaveOpen || 0) + (n.gaveUnseen || 0);
+      out.push('In the three nights as a shepherd you ' + (took ? 'took ' + w(took) + ' sheep from your neighbors' + (back ? ' and put ' + w(back) + ' back' : '') : 'took nothing from your neighbors')
+        + (gave ? ', and you gave ' + w(gave) + ' away' + (n.gaveUnseen === gave ? ' when nobody could know it was you' : n.gaveUnseen ? ' (' + w(n.gaveUnseen) + ' when nobody could know it was you)' : '') : '') + '.');
+    }
     out.push('With the ring you ' + (l.king ? 'killed the king and took the kingdom, as the shepherd does in the story' : l.gold && l.prisoner ? 'took the king’s gold and let a prisoner go' : l.gold ? 'took gold from the king’s chest and stopped there' : l.prisoner ? 'let a prisoner out of the king’s cage and took nothing' : l.returned ? 'did nothing, and put it back on the dead man’s finger' : 'did nothing, and kept it') + '.' + (l.said === 2 ? ' You also pointed out that a story told to a listener cannot test what the listener would do unseen.' : ''));
     if (f.livesPick != null) out.push(['You said the good man who is taken for a criminal still has the better life.', 'You said the rotten man who is taken for a good one has the better life.', 'You could not say which of Glaucon’s two men has the better life.'][f.livesPick]);
     if (f.tablet != null) out.push('You crossed out or kept ' + f.tablet + ' of the four passages of Homer the same way Socrates did.');
     if (f.wentBack != null) out.push(f.wentBack ? 'Having seen the sun, you went back down into the cave' + (f.triedToFree ? ' and tried to free the prisoner beside you.' : ' and sat among the prisoners without speaking.') : f.refused ? 'Having seen the sun, you refused to go back down, even when you were told it was a fair thing to ask.' : 'Having seen the sun, you would not go back down until you were told it was a fair thing to ask.');
     if (f.gameView != null) out.push(['You took the game to be showing you the book.', 'You took the game to be working on you.', 'You took the game to be both showing you the book and working on you.'][f.gameView]);
     if (f.purseEnd) out.push((f.purse0 != null ? 'This morning you told Mika ' + ['to give the purse back', 'to keep the purse', 'that you did not know what she should do'][f.purse0] + '. Tonight you ' : 'You ') + ['told her to give it back because doing right is worth it unseen', 'told her to give it back because the agreement not to cheat depends on it', 'told her to keep it', 'left the choice to her'][f.purseAdvice] + '. ' + (f.purseEnd === 'returned' ? 'She gave it back.' : f.purseEnd === 'kept' ? 'She kept it.' : 'She has not decided.'));
+    if (f.bion) out.push('You found Bion on the hill. ' + (f.bionHello ? 'You lied to him about who you were, and he saw through it. ' : '') + (gg.errand && gg.errand.theftMirror && f.theft ? 'You left him the silver. ' + gg.errand.theftMirror() : { collect: 'You took the thirty minas for Melitta, and Sosias and his son were sold apart.', forgive: 'You left him the silver to buy back Sosias and his son, and Melitta lost her dowry.', pay: 'You left him the silver, and you are selling your mother’s house to pay Melitta’s dowry.', steal: 'You left him the silver and took thirty minas from Philokles unseen. His doorkeeper was beaten and sold for it.' }[f.bion]));
     return out;
   }
   g.mirror = () => mirror(g);

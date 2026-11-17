@@ -65,6 +65,8 @@ export function setupCave(g, api) {
   g.npc('socrates').talk = async (gg) => {
     gg.flags.met_socrates = true;
     if (!gg.flags.ring) { await gg.say('socrates', 'You’ve climbed all this way before hearing how it began. Go down to the house of Cephalus first, and hear Glaucon’s story. I’m not going anywhere.', { mood: 'happy' }); return; }
+    if (gg.errand && gg.errand.caveAsk) await gg.errand.caveAsk(gg);   // the stranger asks about Bion, and Socrates names his price (story_bion.js)
+    if (gg.flags.cave && gg.errand && gg.errand.caveLead && !gg.flags.lead5 && gg.flags.lead4 && !gg.flags.bion) { await gg.errand.caveLead(gg); api.refreshObjective(gg); return; }
     if (gg.flags.cave) { await gg.say('socrates', 'I’ve told you how it seems to me. Whether it’s true, only a god knows.', { mood: 'happy' }); return; }
     if (gg.flags.cave1) { theReturn(); return; }
     gg.ui.area('The cave', 'What is real, and how do we come to know it?');
@@ -294,6 +296,7 @@ export function setupCave(g, api) {
       await runDispute(gg, 'back');
       gg.flags.cave = true; gg.flags.inStory = false; gg.audio.phrase([220, 262, 330, 392, 440]); api.note(gg, 'Going back down');
       await gg.say('mika', 'So even Socrates’ friends can’t agree whether his best people get a fair deal. I thought philosophers were supposed to have answers.', { mood: 'happy' });
+      if (gg.errand && gg.errand.caveLead) await gg.errand.caveLead(gg);   // where Bion is (story_bion.js)
       for (const id of ['kleio', 'sannion', 'theano', 'dromon']) api.relocate(gg, id, ...HOMES[id]);
       api.relocate(gg, 'archedemos', S.citySite.x - 5, S.citySite.z + 5, -2.2);
       api.refreshObjective(gg);
