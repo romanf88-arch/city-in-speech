@@ -10,6 +10,12 @@ Play it here: https://romanf88-arch.github.io/city-in-speech/
 - You need no background in philosophy. A full run takes about two hours.
 - Progress is saved in your own browser. Nothing is sent anywhere.
 
+## The single prompt version 1
+
+The first version of the game is kept as it was on 11 November 2026, before any changes made after playing it: https://romanf88-arch.github.io/city-in-speech/v1/
+
+It covers the same five parts of the Republic, but it has no guide, no errand, and no houses, and its people and sky are the older low-polygon ones. Its saved game is kept apart from the current version. The files are in `v1/`.
+
 ## Controls
 
 W and S walk, A and D turn, drag the mouse to look around, Shift runs, E talks, H asks your guide for help, J opens the journal, M opens the map, Esc pauses.

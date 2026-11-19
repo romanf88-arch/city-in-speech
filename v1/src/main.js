@@ -1,0 +1,44 @@
+// Starts the game: builds the world, wires the title screen, and hands control to the story.
+import { Game, CONFIG } from './game.js';
+import { buildLayout } from './layout.js';
+import { $, store } from './util.js';
+
+const game = new Game();
+window.game = game;   // test seam and console access
+
+async function boot() {
+  const bar = $('loadbar').firstElementChild, progress = (p) => { bar.style.width = Math.round(p * 100) + '%'; };
+  try {
+    await game.init(progress);
+    game.sites = buildLayout(game);
+    progress(0.8);
+    let story = null;
+    try { story = await import('./story.js'); } catch (e) { console.warn('Story not loaded:', e); game.lastError = String(e && e.stack || e); }
+    if (story) await story.setup(game);
+    progress(1);
+    game.mode = 'menu';
+    game.env('afternoon', 0);
+    game.start();
+    const begin = $('btnBegin'), cont = $('btnContinue'), save = game.loadSave();
+    begin.disabled = false; begin.textContent = save ? 'Start over' : 'Begin';
+    if (save) { cont.classList.remove('hidden', 'ghost'); begin.classList.add('ghost'); begin.parentNode.insertBefore(cont, begin); cont.focus(); } else begin.focus();
+    const go = (fromSave) => {
+      game.audio.unlock();
+      $('title').classList.add('hidden'); $('hud').classList.remove('hidden');
+      game.mode = 'play'; game.canvas.focus(); game.snapCam = true;
+      if (story) story.begin(game, fromSave ? save : null);
+      else { game.teleport('world', 0, 46, Math.PI); }
+    };
+    begin.addEventListener('click', () => { if (save) store.del(CONFIG.saveKey); go(false); });
+    cont.addEventListener('click', () => go(true));
+    game.onRestart = () => { location.search.includes('seed') ? location.reload() : (window.location.href = window.location.pathname); };
+    const q = new URLSearchParams(location.search);
+    if (q.has('skip')) go(false);
+    $('pauseKeys').innerHTML = 'W S or arrow keys: walk<br>A D: turn<br>Drag the mouse: look around<br>Mouse wheel: move the view closer or farther<br>Shift: run<br>E: talk or use<br>J: journal &nbsp; M: map<br>1 to 9: choose an answer &nbsp; Space: continue';
+  } catch (e) {
+    console.error(e);
+    const p = document.querySelector('#title .sub'); p.textContent = 'The game could not start: ' + (e && e.message ? e.message : e);
+    game.lastError = String(e && e.stack || e);
+  }
+}
+boot();
