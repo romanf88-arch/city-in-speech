@@ -734,7 +734,12 @@ vec3 seaColorN(vec3 P, vec3 d, float depth, vec3 nG) {
   vec3 col = mix(mix(shallow, deep, 1.0 - exp(-depth * 1.1)), sky, F);
   // Glitter: a tall narrow streak of broken light under the sun or moon.
   vec3 rs = normalize(vec3(d.x, mix(-d.y, uSunDir.y, 0.8), d.z) + vec3(w.x, 0.0, w.y) * 0.16);
-  col += uGlow * uMisc.z * pow(max(dot(rs, uSunDir), 0.0), 260.0) * 2.5;
+  // Under the shadow of a low cloud the glitter goes and the water is a little darker (cloudshade.js, 2026-11-19).
+  float cT = max(1600.0 - P.y, 0.0) / max(uSunDir.y, 0.08); vec2 cP = (P.xz + uSunDir.xz * cT) / 1600.0;
+  float cThr = mix(0.88, 0.16, uCloud.x);
+  float cSh = smoothstep(cThr - 0.06, cThr + 0.26, texture2D(uNoise, cP * 0.42 + uOff.xy).r * 0.74 + texture2D(uNoise, cP * 0.055 + uOff.zw * 0.7 + 0.13).r * 0.42 - 0.08) * (1.0 - smoothstep(0.6, 0.9, uCloud.x));
+  col *= 1.0 - 0.12 * cSh * uMisc.z;
+  col += uGlow * uMisc.z * pow(max(dot(rs, uSunDir), 0.0), 260.0) * 2.5 * (1.0 - 0.9 * cSh);
   return col;
 }
 vec3 seaColor(vec3 P, vec3 d, float depth) { return seaColorN(P, d, depth, vec3(0.0, 1.0, 0.0)); }`;

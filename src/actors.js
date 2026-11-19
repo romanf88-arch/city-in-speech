@@ -361,6 +361,9 @@ const two = (px, py, pz, pitch, yaw, d, dx = 0.1) => { hR(px, py, pz); qR(pitch,
 // Bend forward at the waist while the legs stay upright.
 const bend = (a) => { bo('hips', a, 0, 0); bo('thighL', -a, 0, 0); bo('thighR', -a, 0, 0); bo('skirtU', -a * 0.85, 0, 0); };
 const cyc = (t, period) => (t / period) % 1, ease = (u) => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
+// How far through a rowing stroke: 0 with the arms reached forward (the catch), 1 with the hands at the chest. The
+// pull takes 45% of the 2.6 s stroke, the slower return the rest.
+export const rowPull = (t) => { const u = cyc(t, 2.6); return u < 0.45 ? ease(u / 0.45) : 1 - ease((u - 0.45) / 0.55); };
 const strike = (u) => (u < 0.6 ? ease(u / 0.6) : u < 0.74 ? 1 - ((u - 0.6) / 0.14) ** 2 : 0);    // slow lift, fast blow, short rest
 const bump = (u, a, b2) => ease((u - a) / 0.15) - ease((u - b2) / 0.15);                              // 0, up to 1 between a and b2, back to 0
 const S = Math.sin, C = Math.cos, mix = (a, b2, k) => a + (b2 - a) * k;
@@ -453,6 +456,9 @@ const ACTS = {
   bellows: { space: 'w', f(t) { const s = S(t * 2.8); bend(0.3); bo('spine', 0.25 + 0.1 * s, 0, 0); bo('head', -0.25, 0, 0); hR(-0.1, 0.62 + 0.16 * s, 0.42); hL(0.1, 0.62 + 0.16 * s, 0.42); } },
   // The customer sits 0.5 m ahead with his head near 1.15 m.
   shave: { space: 'w', props: { R: 'knife' }, f(t) { bo('spine', 0.15, 0, 0); bo('head', 0.2, 0, 0); hL(0.1, 1.27, 0.42); hR(-0.07 + 0.03 * S(t * 2.2), 1.15 + 0.04 * S(t * 2.2), 0.4); qR(-0.5, 0.6, 0); } },
+  // Rowing, seated, facing the stern (harbor-boats.js, 2026-11-19): reach forward with both hands, then pull them in
+  // to the chest while leaning back. One stroke every 2.6 s; the boat's oars follow the same cycle (rowPull).
+  row: { pose: 'sit', space: 'w', f(t) { const p = rowPull(t), reach = 1 - p; bo('spine', 0.38 * reach - 0.14 * p, 0, 0); bo('head', -0.12 * reach + 0.06 * p, 0, 0); hR(-0.27, 0.74 + 0.05 * p, 0.2 + 0.5 * reach); hL(0.27, 0.74 + 0.05 * p, 0.2 + 0.5 * reach); } },
   dance: { space: 't', f(t) { const s = S(t * 3.1); hR(-0.42, 1.5 + 0.16 * s, 0.14); hL(0.42, 1.5 - 0.16 * s, 0.14); bo('spine', 0, 0.3 * s, 0.08 * s); bo('hips', 0, -0.2 * s, 0); bo('thighL', -0.35 * Math.max(0, s), 0, 0); bo('shinL', 0.6 * Math.max(0, s), 0, 0); bo('thighR', -0.35 * Math.max(0, -s), 0, 0); bo('shinR', 0.6 * Math.max(0, -s), 0, 0); K.lift = 0.03 * Math.abs(C(t * 3.1)); } },
 };
 const ACT_ALIAS = { scatter: 'sow', quern: 'grind', sell: 'hawk', coins: 'count', tablet: 'write', knucklebones: 'knuckle', net: 'mend', rope: 'well', skewers: 'grill', mason: 'chisel', wheel: 'pot', loom: 'weave', staff: 'lean', rod: 'fish', cup: 'drink' };

@@ -7,6 +7,9 @@ import { HarborDetail } from './harbor-detail.js';
 import { InteractionEffects } from './interaction-effects.js';
 import { DockGulls } from './dock-gulls.js';
 import { setupVolume } from './volume.js';
+import { setupCloudShade } from './cloudshade.js';
+import { setupHarborBoats } from './harbor-boats.js';
+import { setupDoorways } from './doorways.js';
 
 const game = new Game();
 window.game = game;   // test seam and console access
@@ -35,6 +38,9 @@ async function boot() {
     game.interactions = new InteractionEffects(game);
     game.dockGulls = new DockGulls(game);
     setupVolume(game);   // Sound and Music sliders (volume.js)
+    setupDoorways(game);   // doors standing open onto a room (doorways.js)
+    setupHarborBoats(game);   // a rowboat and a ship under sail that move (harbor-boats.js)
+    setupCloudShade(game);   // shadows of the clouds on everything lit (cloudshade.js); after everything is built
     progress(1);
     game.mode = 'menu';
     game.env('afternoon', 0);

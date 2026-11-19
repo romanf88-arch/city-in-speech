@@ -71,6 +71,14 @@ const PLACES = [
   ['milker', -36, -101, S],
   ['goatherd', -52, -100, N, { path: [[0, 0], [-10, 14], [-26, 20], [-12, 6]] }],
   ['donkey_driver', 2.2, -86, N, { path: [[0, 0], [0, 22], [6, 50]] }],
+  // People going about the streets of the first minutes (2026-11-19): the main street from the quay to the square, the
+  // cross street, the street to Cephalus's door, and the street south of the square.
+  ['walker', -1.2, 34, 0, { kind: 'woman', act: 'hydria', path: [[0, 0], [0, -18.5]], speed: 0.85, start: 0.3 }],
+  ['walker', 1.7, 15.5, 0, { kind: 'worker', act: 'sack', path: [[0, 0], [0, 17.5]], speed: 0.9, start: 0.65 }],
+  ['walker', 8, 19, 0, { kind: 'children', path: [[0, 0], [30, 0]], start: 0.2 }],
+  ['walker', -10, 21.8, 0, { kind: 'old', act: 'herd', path: [[0, 0], [-26, 0]], speed: 0.6, start: 0.5 }],
+  ['walker', -6, -44.4, 0, { kind: 'woman', act: 'basket', path: [[0, 0], [-27, 0]], speed: 0.9, start: 0.1 }],
+  ['walker', 1.5, -26, 0, { kind: 'worker', act: 'amphora', path: [[0, 0], [0, -40]], speed: 1.0, start: 0.5 }],
 ];
 
 // What Mika says the first time the player walks up to each kind of scene.

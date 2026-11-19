@@ -179,7 +179,7 @@ export function setupPlaces(g) {
       const edge = world ? Math.max(0, 58.3 - p.z) : 99, sea = edge >= 20 ? 0 : Math.pow(1 - edge / 20, 2);      // 58.3 is the quay front; at 20 m the quay paving ends
       const air = g.space === 'cave' ? 0 : g.space === 'lydia' ? 0.016 : d && d.id === 'hill' ? 0.022 : d && (d.id === 'fields' || d.id === 'stakes') ? 0.016 : d && d.id === 'harbor' ? 0.006 : 0.008;   // at the harbor the wind is kept under the sea, or its steady hiss hides the swells
       if (g.audio.sea) g.audio.sea(sea);
-      g.audio.mix({ wind: air * Math.min(2, wind), cave: g.space === 'cave' ? 0.045 : 0 });
+      g.audio.mix({ wind: air * Math.min(2, wind), cave: g.space === 'cave' ? 0.045 : 0, open: air >= 0.016 ? 1 : 0, windK: wind });   // the wind comes in gusts (audio.js, gusts)
     }
   });
   g.places = { districtAt, cur };

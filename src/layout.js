@@ -287,6 +287,7 @@ export function buildLayout(game) {
   // things set by the doors so they stand on it. None where the ground in front is paved. scatter.js puts broken
   // pottery on these paths (world.doorPaths).
   const doorPaths = [];
+  w.doors = houses.map(([id, p]) => { const d = p.anchor('door'); return { id, x: d.x, y: d.y, z: d.z, rot: p.rot }; });   // every house door (doorways.js)
   for (const [id, p] of houses) {
     if (id === 'house_c') continue;   // its door is inside its own yard
     const d = p.anchor('door'); if (!d) continue;

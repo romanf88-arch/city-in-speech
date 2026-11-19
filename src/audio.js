@@ -20,6 +20,9 @@ export class Audio {
       let last = 0; for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = w * 0.5 + last * 6; }
       this.noise = buf;
       this.bed('wind', 900, 0.4, 0.2); this.bed('fire', 2600, 1.2, 0); this.bed('crowd', 520, 2.2, 0.0); this.bed('cave', 160, 0.9, 0);
+      // The wind comes only in gusts (see gusts): its layer passes through a second gain that rises and falls.
+      this.gust = this.ctx.createGain(); this.gust.gain.value = 0;
+      this.beds.wind.disconnect(); this.beds.wind.connect(this.gust); this.gust.connect(this.master);
     } catch (e) { this.ctx = null; }
   }
   bed(name, freq, q, level) {
@@ -35,6 +38,21 @@ export class Audio {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     for (const k in this.beds) { const v = clamp(levels[k] != null ? levels[k] : 0, 0, 1); this.beds[k].gain.setTargetAtTime(v, t, 0.8); }
+    if (this.gust) this.gusts(levels.open || 0, levels.windK || 1);
+  }
+  // The wind blows in gusts with quiet between them. Until 2026-11-19 it was a steady hiss everywhere outdoors,
+  // measured at about -56 dB in town and -50 dB on the hill, varying by only 3 dB; Roman: "too constant and annoying".
+  // Each gust rises for 2 to 3.5 s, holds for up to 2 s, and falls away over 3 to 6 s, peaking at 55 to 100% of the
+  // place's level (which is no louder than the old steady sound). Then nothing for 20 to 60 s in the town's streets,
+  // or 10 to 35 s where it is open (open = 1), less in a strong wind (windK, the sky's wind, 1 is normal).
+  gusts(open, windK) {
+    const c = this.ctx, t = c.currentTime, G = this.gust.gain;
+    if (this.gustNext == null) this.gustNext = t + 6 + Math.random() * 10;
+    if (this.gustNext > t + 1.5) return;
+    const t0 = Math.max(this.gustNext, t), rise = 2 + Math.random() * 1.5, hold = Math.random() * 2, fall = 3 + Math.random() * 3, peak = 0.55 + Math.random() * 0.45;
+    G.setTargetAtTime(peak, t0, rise / 3); G.setTargetAtTime(0, t0 + rise + hold, fall / 3);
+    const gap = open > 0.5 ? 10 + Math.random() * 25 : 20 + Math.random() * 40;
+    this.gustNext = t0 + rise + hold + fall + gap / Math.max(0.7, Math.min(2, windK));
   }
   // The sea: a low wash that swells and falls back every few seconds, with a little hiss at the top of each swell.
   // Until 2026-11-17 it was one steady band of noise at about -33 dB. Roman, on hearing it: "waves are too loud",

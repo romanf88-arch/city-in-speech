@@ -403,6 +403,20 @@ Object.assign(V, {
     follow(c, h, path, 0.8, { start: 0.14, pause: 7, side: -0.5 });
     for (let i = 0; i < 3; i++) { const g = c.animal(i === 2 ? 'kid' : 'goat', 0, 0, 0, 'walk'); follow(c, g, path, 0.8, { start: 0.03 + i * 0.035, pause: 7, side: [0.45, -0.2, 0.9][i], onWait: () => { g.state = 'graze'; } }); c.tick(() => { if (g.speed > 0) g.state = 'walk'; }); }
   },
+  // Someone going about the street (2026-11-19): one person walking opts.path and back, carrying something
+  // (opts.act: hydria on the head, amphora on the shoulder, basket, sack, or herd for a staff), or with
+  // opts.kind 'children', two children running it. opts.speed in m/s, opts.start 0..1 along the path.
+  walker(c, v) {
+    const path = c.opts.path || [[0, 0], [0, 12]];
+    v.radius = pathRadius(path, 1.2); v.note = 'Someone walking opts.path and back, carrying opts.act; or two children running it (opts.kind children). For streets.';
+    if (c.opts.kind === 'children') {
+      const a = c.person('child', 'child', 0, 0, 0), b = c.person('child', c.r() < 0.5 ? 'girl' : 'child', 0, 0, 0);
+      follow(c, a, path, 2.4, { start: (c.opts.start || 0) + 0.04, pause: 1.0 }); follow(c, b, path, 2.25, { start: c.opts.start || 0, pause: 1.6, side: 0.7 });
+    } else {
+      const p = c.person('walker', c.opts.kind || 'citizen', 0, 0, 0, c.opts.act);
+      follow(c, p, path, c.opts.speed || 1.0, { start: c.opts.start || 0, pause: c.opts.pause != null ? c.opts.pause : 3 });
+    }
+  },
   donkey_driver(c, v) {
     const path = c.opts.path || [[-6, 0], [6, 0]];
     v.radius = pathRadius(path, 1.5); v.note = 'A man leads a loaded donkey along opts.path and back. For streets and the harbor road.';
