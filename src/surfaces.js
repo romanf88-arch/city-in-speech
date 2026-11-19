@@ -10,7 +10,7 @@
 // built here at startup (one layer per kind of surface: slopes for the lighting, tone, joints),
 // plus one low-detail noise picture laid over the world for stains and weathering.
 import * as THREE from 'three';
-import { GROUND_GLSL, getNoise } from './world.js';
+import { getNoise } from './world.js';
 import { mulberry32 } from './util.js';
 
 const N = 256;                         // pattern pictures are N by N
@@ -460,6 +460,9 @@ const FRAG_COLOR = /* glsl */`
   vec4 sTx = vec4(0.5, 0.5, 0.5, 0.0);
 #else
   vec4 sTx = texture(uSurf, vec3(sUv, sP2.w));
+  // The cloth weave (64 threads to a repeat) shimmers in bands when its threads come near the size of a pixel, so
+  // there it gives way to the cloth's average (2026-11-19: market awnings seen from the camera's height).
+  if (abs(sP2.w - ${LAYER.cloth}.0) < 0.5) { float sThr = 64.0 * max(length(dFdx(sUv)), length(dFdy(sUv))); sTx = mix(sTx, textureLod(uSurf, vec3(sUv, sP2.w), 12.0), smoothstep(0.22, 0.55, sThr)); }
 #endif
 #if S_DBG == 2 || S_DBG == 4
   vec4 sLo = vec4(0.5);
@@ -549,24 +552,41 @@ export class Surfaces {
     this.material = make({});
     // The same material pulled a hair toward the eye, for flat pieces laid on the ground.
     this.flatMaterial = make({ polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-    // Streets: packed earth with the ground's own detail, fading out at the edges.
-    this.streetMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-    this.streetMaterial.onBeforeCompile = (sh) => {
-      const [n1, n2] = getNoise();
-      sh.uniforms.uGNoise = { value: n1 }; sh.uniforms.uGNoise2 = { value: n2 };
-      sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute vec2 aEdge;\nvarying vec3 vGW;\nvarying vec2 vEdge;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vGW = (modelMatrix * vec4(transformed, 1.0)).xyz; vEdge = aEdge;');
-      sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vGW;\nvarying vec2 vEdge;\n' + GROUND_GLSL)
-        .replace('#include <color_fragment>', `#include <color_fragment>
-  vec2 gBump; vec3 gBase = diffuseColor.rgb; vec3 gC = groundColor(gBase, vGW, 1.0, gBump);
+    // Streets and door paths (2026-11-19): a cheap overlay that lightens or darkens the ground already drawn under
+    // it, so it needs no lighting, shadows or ground texture of its own (four texture reads). Streets: trodden earth a
+    // little paler, and where wider than 3.2 m two cart ruts 1.45 m apart that wander a little and break off in
+    // places, a paler lip beside each, and a darker, pitted middle where the animals walk. Door paths (world.worn):
+    // darker, browner earth packed by feet. Damp patches on both, more by doors.
+    // It fades out at its edges and ends and beyond 70 m. The blend multiplies the picture by twice the color written,
+    // so 0.5 leaves it as it is. (Until 2026-11-19 streets were a lit copy of the ground; they were never drawn, being
+    // wound face down, and drawn they cost up to 9 ms a frame at 1080p on Intel UHD 620 where they filled the view.)
+    const [n1, n2] = getNoise();
+    this.streetMaterial = new THREE.ShaderMaterial({
+      uniforms: { uGNoise: { value: n1 }, uGNoise2: { value: n2 } },
+      vertexShader: `attribute vec2 aEdge; attribute float aHalf; varying vec3 vGW; varying vec2 vEdge; varying float vHalf;
+void main() { vec4 w = modelMatrix * vec4(position, 1.0); vGW = w.xyz; vEdge = aEdge; vHalf = aHalf; gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: `uniform sampler2D uGNoise, uGNoise2; varying vec3 vGW; varying vec2 vEdge; varying float vHalf;
+void main() {
   vec4 gN = texture2D(uGNoise, vGW.xz * 0.23 + 0.31);
-  // Trodden earth is paler and smoother than the ground beside it, with a scatter of small stones.
-  diffuseColor.rgb = mix(gC, gBase * (0.74 + 0.3 * gN.g), 0.55) * (1.0 - 0.25 * smoothstep(0.72, 0.8, texture2D(uGNoise, vGW.xz * 1.9).g));
-  diffuseColor.a = (1.0 - smoothstep(0.45, 1.0, abs(vEdge.x) + (gN.r - 0.5) * 0.5)) * vEdge.y * 0.9;`)
-        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n  normal = normalize(normal + (viewMatrix * vec4(gBump.x, 0.0, gBump.y, 0.0)).xyz * 0.6);');
-    };
+  float a = (1.0 - smoothstep(0.45, 1.0, abs(vEdge.x) + (gN.r - 0.5) * 0.5)) * vEdge.y * (1.0 - smoothstep(45.0, 70.0, distance(cameraPosition, vGW)));
+  float sW = step(1.6, vHalf), sX = vEdge.x * vHalf;
+  // streets a little paler than the ground; door paths (narrower) darker, packed by feet and wet from the doorway
+  vec3 F = mix(vec3(0.84, 0.79, 0.72), vec3(1.07), sW) * (1.0 + 0.08 * (gN.g - 0.5));
+  float sWav = (texture2D(uGNoise2, vGW.xz * 0.013 + 0.37).a - 0.5) * 0.9;
+  float sD = min(abs(sX - sWav - 0.72), abs(sX - sWav + 0.72));
+  vec4 sN = texture2D(uGNoise, vGW.xz * 0.11 + 0.5);
+  float sOn = smoothstep(0.4, 0.66, sN.r) * sW;
+  float sRut = (1.0 - smoothstep(0.04, 0.1 + 0.1 * sN.g, sD)) * sOn;
+  float sLip = (1.0 - smoothstep(0.0, 0.08, abs(sD - 0.22))) * sOn;
+  float sMid = (1.0 - smoothstep(0.2, 0.45, abs(sX - sWav))) * sW;
+  F *= (1.0 - 0.26 * sRut) * (1.0 + 0.08 * sLip) * (1.0 - 0.1 * sMid * gN.b);
+  F *= 1.0 - mix(0.3, 0.17, sW) * smoothstep(mix(0.6, 0.76, sW), 0.86, texture2D(uGNoise, vGW.xz * 0.021 + 0.2).r) * (1.0 - sRut);
+  gl_FragColor = vec4(0.5 * mix(vec3(1.0), F, a), 1.0);
+}`,
+      transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.DstColorFactor, blendDst: THREE.SrcColorFactor,
+      blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    });
     this.buildMs = performance.now() - t0;
   }
 
@@ -598,16 +618,13 @@ export class Surfaces {
   }
 
   // The streets are strips of quads built in a fixed vertex order: left, left, right, right, left, right.
+  // The world gives each street vertex aEdge (across the street from -1 to 1, and 0 at either end for the fade) and
+  // aHalf (the half-width in meters, for the cart ruts); see world._strip. All vertices take the street's mean color.
   _street(g) {
-    const n = g.attributes.position.count, edge = new Float32Array(n * 2), col = g.attributes.color.array, side = [-1, -1, 1, 1, -1, 1], along = [0, 1, 0, 0, 1, 1], last = n / 6 - 1;
+    const n = g.attributes.position.count, col = g.attributes.color.array;
     let r = 0, gg = 0, b = 0;
     for (let i = 0; i < n; i++) { r += col[i * 3]; gg += col[i * 3 + 1]; b += col[i * 3 + 2]; }
-    for (let i = 0; i < n; i++) {
-      const q = Math.floor(i / 6), k = i % 6;
-      edge[i * 2] = side[k]; edge[i * 2 + 1] = (q === 0 && along[k] === 0) || (q === last && along[k] === 1) ? 0 : 1;
-      col[i * 3] = r / n; col[i * 3 + 1] = gg / n; col[i * 3 + 2] = b / n;
-    }
-    g.setAttribute('aEdge', new THREE.BufferAttribute(edge, 2));
+    for (let i = 0; i < n; i++) { col[i * 3] = r / n; col[i * 3 + 1] = gg / n; col[i * 3 + 2] = b / n; }
     return this.streetMaterial;
   }
 

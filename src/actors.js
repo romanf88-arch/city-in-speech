@@ -367,6 +367,9 @@ const S = Math.sin, C = Math.cos, mix = (a, b2, k) => a + (b2 - a) * k;
 
 // One-shot gestures: [seconds, function(u, e)]. u runs 0..1; e is a soft in-and-out envelope.
 const GESTURES = {
+  pour: [1.9, (u,e)=>{setH(G.L,0.20,1.22,0.42,e);setH(G.R,-0.05,0.94,0.49,e);bo('handL',0,0,-0.85*e);bo('head',0.20*e,0,0);}],
+  scatter: [1.5, (u,e)=>{setH(G.R,-0.15+0.35*u,1.13+0.12*S(u*3.14),0.36+0.3*u,e);bo('handR',-0.8*e,0,0);bo('head',0.1*e,0,0);}],
+  offer: [1.6, (u,e)=>{setH(G.R,-0.08,1.05,0.62,e);setH(G.L,0.14,1.0,0.35,e);bo('head',0.1*e,0,0);}],
   nod: [0.9, (u, e) => bo('head', 0.28 * S(u * 9.4) * e, 0, 0)],
   shake: [1.1, (u, e) => bo('head', 0, 0.45 * S(u * 12.6) * e, 0)],
   shrug: [1.3, (u, e) => { K.shrug += e; bo('head', 0, 0, 0.14 * e); for (const [s, a] of [[1, 'L'], [-1, 'R']]) { bo('arm' + a, -0.15 * e, 0, s * 0.3 * e); bo('fore' + a, -1.0 * e, 0, 0); bo('hand' + a, -0.7 * e, 0, 0); } }],

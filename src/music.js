@@ -31,7 +31,7 @@ const VOICES = {
 
 export class Music {
   constructor(audio) {
-    this.a = audio; this.on = true; this.voice = null; this.next = 0; this.cache = new Map(); this.level = 0.16; this.duck = 1;
+    this.a = audio; this.on = true; this.vol = 1; this.voice = null; this.next = 0; this.cache = new Map(); this.level = 0.16; this.duck = 1;
     this.rng = (() => { let s = 99173; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();
   }
   setup() {
@@ -46,10 +46,14 @@ export class Music {
     this.body = ctx.createBiquadFilter(); this.body.type = 'peaking'; this.body.frequency.value = 260; this.body.gain.value = 4; this.body.Q.value = 0.9;
     const top = ctx.createBiquadFilter(); top.type = 'lowpass'; top.frequency.value = 3600;
     this.body.connect(top); top.connect(this.bus); top.connect(this.verb); this.verb.connect(wet); wet.connect(this.bus);
-    this.bus.connect(this.a.master);
+    // Music has its own volume (the Music slider, volume.js) and goes straight out, so turning Sound down leaves it.
+    // (Until 2026-11-19 it went through the sound's master, so "Sound off" silenced the music too.)
+    this.out = ctx.createGain(); this.out.gain.value = 0.8 * this.vol * this.vol;
+    this.bus.connect(this.out); this.out.connect(ctx.destination);
     return true;
   }
-  setOn(on) { this.on = on; }
+  setVolume(v) { this.vol = Math.min(1, Math.max(0, v)); this.on = this.vol > 0; if (this.out) this.out.gain.setTargetAtTime(0.8 * this.vol * this.vol, this.a.ctx.currentTime, 0.05); }
+  setOn(on) { this.setVolume(on ? 1 : 0); }
 
   // Called every frame. where: 'town' | 'fields' | 'lydia' | 'cave'; night: boolean; quiet: 0..1 (1 silences).
   update(where, night, quiet) {

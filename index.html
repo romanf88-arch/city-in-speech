@@ -145,6 +145,18 @@ button.card:hover,button.card.sel{border-color:var(--gold);background:#fff6d6;bo
 .word p{margin:2px 0 0;font-size:16px}
 @media (max-width:700px){#dlgText{font-size:17px}.panel{padding:18px}.panel h1{font-size:30px}}
 @media (prefers-reduced-motion:reduce){.toast{animation:none}#area,#story{transition:none}}
+/* Sound and Music volume sliders (volume.js) */
+.vol-pop{position:fixed;z-index:20;pointer-events:auto;display:flex;align-items:center;gap:10px;background:var(--shade);color:#f6ecd8;border:1px solid rgba(255,235,190,.35);border-radius:8px;padding:8px 10px;font-size:13px}
+.vol-pop input[type=range]{width:150px;accent-color:#d9b46a;cursor:pointer}
+.vol-pop .vol-val{min-width:36px;text-align:right;font-variant-numeric:tabular-nums}
+.vol-pop .chip{padding:4px 10px}
+/* Presentation settings in the pause panel (polish.js) */
+.presentation-settings{margin:18px 0 10px;border:1px solid var(--line);border-radius:8px;padding:10px 14px;text-align:left}
+.presentation-settings legend{font:12px var(--sans);letter-spacing:.08em;text-transform:uppercase;padding:0 7px;color:var(--ink2)}
+.presentation-settings label{display:flex;align-items:flex-start;gap:10px;margin:10px 0;cursor:pointer;font:14px/1.4 var(--sans)}
+.presentation-settings input{margin-top:3px;accent-color:#9f5a35;width:16px;height:16px;flex:none}
+.presentation-settings small{display:block;color:var(--ink2);font-size:12px;margin-top:2px}
+#pause .panel{max-height:92vh;overflow:auto}
 </style>
 </head>
 <body>
@@ -157,8 +169,8 @@ button.card:hover,button.card.sel{border-color:var(--gold);background:#fff6d6;bo
     <button class="chip hidden" id="btnGuide">Ask Mika<kbd>H</kbd></button>
     <button class="chip" id="btnJournal">Journal<kbd>J</kbd></button>
     <button class="chip" id="btnMap">Map<kbd>M</kbd></button>
-    <button class="chip" id="btnSound" aria-pressed="true">Sound on</button>
-    <button class="chip" id="btnMusic" aria-pressed="true">Music on</button>
+    <button class="chip" id="btnSound" aria-expanded="false">Sound</button>
+    <button class="chip" id="btnMusic" aria-expanded="false">Music</button>
     <button class="chip" id="btnPause">Pause<kbd>Esc</kbd></button>
   </div>
   <div id="area"><b></b><span></span></div>

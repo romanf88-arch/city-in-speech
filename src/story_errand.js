@@ -46,6 +46,7 @@ export function setupErrand(g, api) {
   // What the goal box and Mika say during the task. The three orders of step 3 are not repeated in the goal box:
   // the player has to have listened. Mika will repeat them if asked.
   g.errand = {
+    ritualScene: { basket, jar, altar: ALTAR, table: TABLE, water: JAR, wash: WASH, crowd: CROWD },
     objective: () => [null, 'Take the basket and the water jar, by the courtyard door', 'Carry them once round the altar', 'Sprinkle the altar', 'Do the three things Cephalus asked, in his order', 'Answer Cephalus'][step + 1] || 'Go into the courtyard. Cephalus is at the altar.',
     guide: () => [['Go on in. He’s at the altar, the square stone in the middle.'],
       ['The basket is on the little table by the door, and the water jar is next to it. Take both.'],
@@ -80,6 +81,7 @@ export function setupErrand(g, api) {
     if (Math.abs(turn) >= 2 * PI * 0.93) {
       step = 1.5;
       g.run(async (gg) => {
+        if(gg.interactions)await gg.interactions.play('steam',ceph().actor,{x:jar.position.x,y:jar.position.y+0.7,z:jar.position.z},{source:jar,offset:new THREE.Vector3(0,0.46,0)});
         await gg.say('', 'Cephalus takes a burning stick from the altar and puts it out in the water. It hisses.');
         await gg.say('cephalus', 'Now sprinkle the altar.');
         set(2);
@@ -87,6 +89,7 @@ export function setupErrand(g, api) {
     }
   });
   g.addSpot({ x: ALTAR.x, z: ALTAR.z, r: 2.0, label: 'Sprinkle the altar', when: () => step === 2, run: async (gg) => {
+    if(gg.interactions)await gg.interactions.play('water',gg.player,{x:ALTAR.x,y:yOf(ALTAR)+1.1,z:ALTAR.z},{source:jar,offset:new THREE.Vector3(0,0.46,0)});
     gg.audio.blip('pebble');
     await gg.say('cephalus', 'Give me some barley. Then wash your hands, and scatter the rest among the company.');
     sub = 0; ceph().label = 'Give Cephalus barley'; set(3);
@@ -96,16 +99,28 @@ export function setupErrand(g, api) {
   // The barley is handed to Cephalus himself, so for that moment pressing E beside him gives it (story.js asks give()).
   g.errand.give = async (gg) => {
     if (step !== 3 || sub !== 0) return false;
-    sub = 1; ceph().label = null; gg.audio.blip('pick'); await gg.say('', 'He takes a handful from the basket and throws it on the fire.'); return true;
+    sub = 1; ceph().label = null; gg.audio.blip('pick');
+    // You hold out the basket; he takes a handful and throws it on the fire.
+    if (gg.interactions && !gg.ui.auto && !gg.reduceMotion) { gg.player.play('offer'); await gg.wait(0.7); }
+    // The fire is on the brazier beside the altar (2 m away); the barley goes there.
+    let fire = null, fd = 3; for (const f of gg.flames) { const d = Math.hypot(f.x - ALTAR.x, f.z - ALTAR.z); if (d < fd) { fd = d; fire = f; } }
+    if (gg.interactions) await gg.interactions.play('grain', ceph().actor, fire ? { x: fire.x, y: fire.y, z: fire.z } : { x: ALTAR.x, y: yOf(ALTAR) + 1.1, z: ALTAR.z });
+    await gg.say('', 'He takes a handful from the basket and throws it on the fire.'); return true;
   };
   g.addSpot({ x: WASH.x, z: WASH.z, r: 1.3, label: 'Pour water over your hands', when: () => step === 3 && sub < 2, run: async (gg) => {
     if (sub === 0) { await wrong(gg, 'The barley first.'); return; }
-    sub = 2; gg.audio.blip('pebble'); await gg.say('', 'You pour water from the jar over one hand and then the other.');
+    sub = 2; gg.audio.blip('pebble');
+    if(gg.interactions) {
+      const hand=new THREE.Vector3(),target=()=>{gg.player.bones.handR.updateWorldMatrix(true,false);return gg.player.bones.handR.getWorldPosition(hand);};
+      await gg.interactions.play('water',gg.player,target,{source:jar,offset:new THREE.Vector3(0,0.46,0)});
+    }
+    await gg.say('', 'You pour water from the jar over one hand and then the other.');
   } });
   g.addSpot({ x: CROWD.x, z: CROWD.z, r: 2.2, label: 'Scatter the barley among them', when: () => step === 3, run: async (gg) => {
     if (sub === 0) { await wrong(gg, 'The barley first. To me.'); return; }
     if (sub === 1) { await wrong(gg, 'Not with those hands. Wash first.'); return; }
     step = 3.5;
+    if(gg.interactions)await gg.interactions.play('grain',gg.player,{x:CROWD.x,y:yOf(CROWD)+0.5,z:CROWD.z});
     await gg.say('', 'The grains patter on cloaks and on the paving. The big man in the yellow cloak brushes his off.');
     set(4);
     await gg.say('cephalus', 'Let us pray. Who is here?');

@@ -136,7 +136,7 @@ export class Game {
     this.mode = 'loading'; this.busy = 0; this.time = 0; this.acc = 0; this.last = 0; this.timeScale = 1;
     this.flags = {}; this.cards = []; this.disputeState = {}; this.log = []; this.stats = { asked: 0, objections: 0, hits: 0, misses: 0 };
     this.keys = new Set(); this.pressed = new Set();
-    this.npcs = new Map(); this.spots = []; this.triggers = []; this.chatter = []; this.flames = []; this.waits = []; this.tickers = [];
+    this.npcs = new Map(); this.spots = []; this.triggers = []; this.chatter = []; this.flames = []; this.waits = []; this.tickers = []; this.presenters = [];
     this.spaces = {}; this.space = 'world';
     this.reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.cam = { dYaw: 0, dPitch: 0, yaw: Math.PI, pitch: CONFIG.camPitch, dist: CONFIG.camDist, want: CONFIG.camDist, cur: CONFIG.camDist, t: new THREE.Vector3(), mode: 'follow', drag: false, fpYaw: 0, fpPitch: 0, fpLimit: null };
@@ -169,7 +169,7 @@ export class Game {
     await this.kit.load('./assets/kit/');
     progress(0.6);
     const w = this.world;
-    this.spaces.world = { name: 'world', ground: (x, z) => w.standY(x, z), walkable: (x, z) => w.walkable(x, z), resolve: (x, z, rr) => w.resolve(x, z, rr), solidAt: (x, y, z, p) => w.solidAt(x, y, z, p), blocksView: (x, y, z, p) => w.blocksView(x, y, z, p), surface: () => 'earth' };
+    this.spaces.world = { name: 'world', ground: (x, z) => w.standY(x, z), walkable: (x, z) => w.walkable(x, z), resolve: (x, z, rr) => w.resolve(x, z, rr), solidAt: (x, y, z, p) => w.solidAt(x, y, z, p), blocksView: (x, y, z, p) => w.blocksView(x, y, z, p), surface: (x, z) => w.surfaceAt(x, z) };
     this.spaces.lydia = this.spaces.world;
     // The player.
     this.player = new Actor({ skin: 'tan', hair: 0x3a2a1c, beard: 'short', robe: 0xd8cdb0, robe2: 0x6f7f8a, hat: 'petasos', ownMaterial: true }, 99);
@@ -241,7 +241,7 @@ export class Game {
   toggle(id) {
     const e = $(id), open = e.classList.contains('hidden');
     this.closeOverlays();
-    if (open) { e.classList.remove('hidden'); if (id === 'journal' && this.renderJournal) this.renderJournal(); if (id === 'map') this.drawMap(); e.querySelector('button').focus(); }
+    if (open) { this.audio.paper(); e.classList.remove('hidden'); if (id === 'journal' && this.renderJournal) this.renderJournal(); if (id === 'map') this.drawMap(); e.querySelector('button').focus(); }
   }
   pause(on) {
     if (on && this.mode === 'play') { this.mode = 'paused'; $('pause').classList.remove('hidden'); $('restartAsk').classList.add('hidden'); $('btnResume').focus(); }
@@ -562,6 +562,7 @@ export class Game {
     if (this.scatter) this.scatter.update(this.camera.position, dt);
     this.surface.update(this.sky, this.camera, dt);
     this.updateFlames(dt);
+    for (const present of this.presenters) present(dt);   // visual accents that follow the sky (harbor-detail.js)
     if (this.music) { const p0 = this.player, where = this.space === 'cave' ? 'cave' : this.space === 'lydia' || this.envName === 'lydia' ? 'lydia' : p0.z < -84 ? 'fields' : 'town'; this.music.update(this.mode === 'play' || this.mode === 'paused' ? where : 'town', this.sky.cur.stars > 0.5, this.busy ? 1 : 0); }
     if (this.objectiveData && this.objectiveData.x != null && this.mode === 'play') {
       const o = this.objectiveData, dx = o.x - p.x, dz = o.z - p.z, d = Math.hypot(dx, dz);

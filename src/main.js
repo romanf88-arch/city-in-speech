@@ -2,6 +2,11 @@
 import { Game, CONFIG } from './game.js';
 import { buildLayout } from './layout.js';
 import { $, store } from './util.js';
+import { Polish } from './polish.js';
+import { HarborDetail } from './harbor-detail.js';
+import { InteractionEffects } from './interaction-effects.js';
+import { DockGulls } from './dock-gulls.js';
+import { setupVolume } from './volume.js';
 
 const game = new Game();
 window.game = game;   // test seam and console access
@@ -24,6 +29,12 @@ async function boot() {
     try { const life = await import('./life.js'); life.setupLife(game); } catch (e) { console.warn('People at work not loaded:', e && e.message); }
     // The districts: a name on entering each, its own light, and a few landmarks. The game still runs without them.
     try { const places = await import('./places.js'); places.setupPlaces(game); } catch (e) { console.warn('Districts not set up:', e && e.message); }
+    // From the Codex copy (2026-11-19): presentation settings, harbor detail, altar effects, quay gulls.
+    game.polish = new Polish(game);
+    game.harbor = new HarborDetail(game);
+    game.interactions = new InteractionEffects(game);
+    game.dockGulls = new DockGulls(game);
+    setupVolume(game);   // Sound and Music sliders (volume.js)
     progress(1);
     game.mode = 'menu';
     game.env('afternoon', 0);

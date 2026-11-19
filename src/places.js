@@ -26,14 +26,37 @@ export const DISTRICTS = [
 export const districtAt = (x, z) => DISTRICTS.find((d) => d.test(x, z)) || null;
 
 // ---- a small builder: many flat pieces with their own colors, drawn as one object
+const clothUniforms = { uClothTime: { value: 0 }, uClothWind: { value: 1 } };
+function windCloth(material) {
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, clothUniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aCloth; uniform float uClothTime; uniform float uClothWind;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nfloat wave = sin(position.x * 1.8 + position.z * 1.1 - uClothTime * 2.2) + 0.35 * sin(position.y * 5.1 - uClothTime * 3.7);\ntransformed.x += wave * aCloth * uClothWind * 0.11;\ntransformed.z += wave * aCloth * uClothWind * 0.055;');
+  };
+  material.customProgramCacheKey = () => 'codex-cloth-wind-v1';
+  return material;
+}
 function pieces() {
-  const pos = [], col = [], cpos = [], ccol = [], cnor = [], c = new THREE.Color();
+  const pos = [], col = [], cpos = [], ccol = [], cnor = [], cwind = [], c = new THREE.Color();
   const quad = (a, b, d, e, hex, shade = 1) => { c.setHex(hex); for (const p of [a, b, d, a, d, e]) { pos.push(p[0], p[1], p[2]); col.push(c.r * shade, c.g * shade, c.b * shade); } };
   return {
     quad,
     // A piece of cloth. It is drawn once for each side, and both sides are lit as if they faced the sky, so hanging
     // cloth shows its color from either side and from below (lit by its true facing, the shaded side came out nearly black).
-    cloth(a, b, d, e, hex) { c.setHex(hex); for (const p of [a, b, d, a, d, e, a, d, b, a, e, d]) { cpos.push(p[0], p[1], p[2]); ccol.push(c.r, c.g, c.b); cnor.push(0, 1, 0); } },
+    cloth(a, b, d, e, hex) {
+      c.setHex(hex);
+      const hanging = (a[1] + b[1] - d[1] - e[1]) * 0.5 > 0.25;
+      const at = (u, v) => a.map((n, i) => (n * (1 - u) + b[i] * u) * (1 - v) + (e[i] * (1 - u) + d[i] * u) * v);
+      const point = (u, v) => {
+        cpos.push(...at(u, v)); ccol.push(c.r, c.g, c.b); cnor.push(0, 1, 0);
+        cwind.push(hanging ? v * v : Math.sin(Math.PI * u) * Math.sin(Math.PI * v));
+      };
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 5; j++) {
+        const u = i / 3, v = j / 5, x = (i + 1) / 3, y = (j + 1) / 5;
+        for (const [s, t] of [[u,v],[x,v],[x,y],[u,v],[x,y],[u,y],[u,v],[x,y],[x,v],[u,v],[u,y],[x,y]]) point(s, t);
+      }
+    },
     // an upright post, square in section
     post(x, y, z, h, w = 0.09, hex = 0x5a4634) { const k = [[-w, -w], [w, -w], [w, w], [-w, w]]; for (let i = 0; i < 4; i++) { const p = k[i], q = k[(i + 1) % 4]; quad([x + p[0], y, z + p[1]], [x + q[0], y, z + q[1]], [x + q[0], y + h, z + q[1]], [x + p[0], y + h, z + p[1]], hex, 0.8 + 0.1 * i); } },
     // a sagging rope from a to b, as thin crossed strips; returns the points along it
@@ -49,7 +72,12 @@ function pieces() {
       const m1 = new THREE.Mesh(g1, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })); m1.receiveShadow = true; grp.add(m1);
       if (cpos.length) {
         const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.Float32BufferAttribute(cpos, 3)); g2.setAttribute('color', new THREE.Float32BufferAttribute(ccol, 3)); g2.setAttribute('normal', new THREE.Float32BufferAttribute(cnor, 3));
-        const m2 = new THREE.Mesh(g2, new THREE.MeshLambertMaterial({ vertexColors: true })); m2.castShadow = !!shadow; grp.add(m2);
+        g2.setAttribute('aCloth', new THREE.Float32BufferAttribute(cwind, 1));
+        const m2 = new THREE.Mesh(g2, windCloth(new THREE.MeshLambertMaterial({ vertexColors: true })));
+        m2.castShadow = !!shadow;
+        m2.customDepthMaterial = windCloth(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }));
+        g2.computeBoundingSphere(); g2.boundingSphere.radius += 0.3;
+        grp.add(m2);
       }
       return grp;
     },
@@ -120,6 +148,8 @@ export function setupPlaces(g) {
   let here = 'harbor', shownAt = {}, soundT = 0;       // the game opens with its own title at the harbor
   shownAt.harbor = 0;
   g.tickers.push((dt) => {
+    clothUniforms.uClothTime.value = g.time;
+    clothUniforms.uClothWind.value = g.reduceMotion ? 0 : Math.min(1.7, g.sky.cur.wind || 0);
     const p = g.player, world = g.space === 'world', d = world ? districtAt(p.x, p.z) : null, L = d ? d.look : N, k = 1 - Math.exp(-0.7 * dt);
     const S = (v) => 1 + (v - 1) * STRENGTH, to = { ex: S(L.ex), color: S(L.color), contrast: S(L.contrast), haze: S(L.haze), wr: S(L.warm[0]), wg: S(L.warm[1]), wb: S(L.warm[2]), cr: S(L.cool[0]), cg: S(L.cool[1]), cb: S(L.cool[2]) };
     for (const key in cur) cur[key] += (to[key] - cur[key]) * k;
@@ -138,13 +168,15 @@ export function setupPlaces(g) {
     // The sea at the water's edge, the wind in the open, and the low tone of the cave. Set twice a second; the sound
     // follows over about a second. Levels were measured with an offline render on 2026-11-17, after Roman heard the
     // first version: "waves are too loud", "it should start quieter and then disappear as you move away".
-    // The sea is heard only within 38 m of the quay's edge. The wind and the cave tone came down by about 10 dB too,
+    // The sea is heard only within 20 m of the quay's edge, that is, on the quay paving and the piers (it was 38 m until
+    // 2026-11-19, when Roman said the waves "persist as I walk away"; once off the quay "I really shouldn't hear it").
+    // The wind and the cave tone came down by about 10 dB too,
     // because the wind on the hill and the cave tone measured as loud as the sea he complained of.
     soundT -= dt;
     if (soundT <= 0 && g.audio && g.audio.mix) {
       soundT = 0.5;
       const wind = (g.sky && g.sky.cur && g.sky.cur.wind != null ? g.sky.cur.wind : 1);
-      const edge = world ? Math.max(0, 58.3 - p.z) : 99, sea = edge >= 38 ? 0 : Math.pow(1 - edge / 38, 2);      // 58.3 is the quay front
+      const edge = world ? Math.max(0, 58.3 - p.z) : 99, sea = edge >= 20 ? 0 : Math.pow(1 - edge / 20, 2);      // 58.3 is the quay front; at 20 m the quay paving ends
       const air = g.space === 'cave' ? 0 : g.space === 'lydia' ? 0.016 : d && d.id === 'hill' ? 0.022 : d && (d.id === 'fields' || d.id === 'stakes') ? 0.016 : d && d.id === 'harbor' ? 0.006 : 0.008;   // at the harbor the wind is kept under the sea, or its steady hiss hides the swells
       if (g.audio.sea) g.audio.sea(sea);
       g.audio.mix({ wind: air * Math.min(2, wind), cave: g.space === 'cave' ? 0.045 : 0 });

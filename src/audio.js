@@ -4,13 +4,17 @@ import { clamp } from './util.js';
 const SEA_LEVEL = 0.026;   // how loud the sea is at the water's edge. Halve it to take 6 dB off.
 
 export class Audio {
-  constructor() { this.ctx = null; this.on = true; this.beds = {}; this.levels = {}; }
+  constructor() { this.ctx = null; this.vol = 1; this.on = true; this.beds = {}; this.levels = {}; }
+  // The Sound slider (volume.js), 0 to 1. Full is the old "Sound on" (master 0.8); the slider is squared, so its
+  // middle is about 12 dB down rather than 6, which sounds nearer half as loud. Music has its own (music.js).
+  static gainFor(v) { return 0.8 * v * v; }
+  setVolume(v) { this.vol = clamp(v, 0, 1); this.on = this.vol > 0; if (this.master) this.master.gain.setTargetAtTime(Audio.gainFor(this.vol), this.ctx.currentTime, 0.05); }
   unlock() {
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
     try {
       const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
       this.ctx = new AC();
-      this.master = this.ctx.createGain(); this.master.gain.value = this.on ? 0.8 : 0; this.master.connect(this.ctx.destination);
+      this.master = this.ctx.createGain(); this.master.gain.value = Audio.gainFor(this.vol); this.master.connect(this.ctx.destination);
       // One shared noise buffer for sea, wind, fire, and footsteps.
       const len = this.ctx.sampleRate * 2, buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate), d = buf.getChannelData(0);
       let last = 0; for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = w * 0.5 + last * 6; }
@@ -63,7 +67,7 @@ export class Audio {
       s.next = t0 + up + 3 + Math.random() * 2.5;
     }
   }
-  setOn(on) { this.on = on; if (this.master) this.master.gain.setTargetAtTime(on ? 0.8 : 0, this.ctx.currentTime, 0.05); }
+  setOn(on) { this.setVolume(on ? 1 : 0); }
   tone(freq, dur, type = 'sine', vol = 0.12, slide = 0) {
     if (!this.ctx || !this.on) return;
     const t = this.ctx.currentTime, o = this.ctx.createOscillator(), g = this.ctx.createGain();
@@ -154,11 +158,30 @@ export class Audio {
   }
   // A short modal phrase on the lyre.
   phrase(notes, gap = 260) { notes.forEach((f, i) => setTimeout(() => this.pluck(f, 1.1), i * gap)); }
+  paper() {
+    if (!this.ctx || !this.on) return;
+    this.burst(0, 0.14, 2300, 1100, 0.022, 'bandpass', 0.7, 0.012);
+    this.burst(0.075, 0.13, 3200, 1600, 0.014, 'bandpass', 0.8, 0.015);
+  }
+  water() {
+    if(!this.ctx || !this.on)return;
+    for(let i=0;i<5;i++)this.burst(i*0.12,0.15,1800+i*120,700,0.018,'bandpass',0.7,0.015);
+  }
+  grains() {
+    if(!this.ctx || !this.on)return;
+    for(let i=0;i<9;i++)this.burst(i*0.025,0.025,2900,1600,0.009,'bandpass',1.2,0.003);
+  }
+  hiss() {
+    if(!this.ctx || !this.on)return;
+    this.burst(0,0.48,4200,1000,0.018,'highpass',0.5,0.03);
+  }
   step(surface) {
     if (!this.ctx || !this.on) return;
     const t = this.ctx.currentTime, src = this.ctx.createBufferSource(), f = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
-    src.buffer = this.noise; f.type = 'lowpass'; f.frequency.value = surface === 'stone' ? 1500 : surface === 'cave' ? 700 : 900;
+    src.buffer = this.noise; f.type = surface === 'earth' ? 'bandpass' : 'lowpass'; f.frequency.value = surface === 'wood' ? 480 : surface === 'stone' ? 1800 : surface === 'cave' ? 700 : 1100;
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(surface === 'cave' ? 0.16 : 0.09, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
     src.connect(f); f.connect(g); g.connect(this.master); src.start(t, Math.random() * 1.5, 0.13);
+    if (surface === 'wood') this.tone(150 + Math.random() * 30, 0.09, 'sine', 0.025, -35);
+    else if (surface === 'stone') this.tone(950 + Math.random() * 220, 0.025, 'triangle', 0.012, -170);
   }
 }

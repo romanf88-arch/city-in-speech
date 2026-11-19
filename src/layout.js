@@ -26,7 +26,10 @@ export function buildLayout(game) {
   // The wet band where the harbor water meets the quay front and the two piers (world.js, Sea.wetBand).
   if (game.sea && game.sea.wetBand) game.sea.wetBand(game.world.group, [[-93, 58.3, -63.5, 58.3, 0, 1], [-56.5, 58.3, 56.5, 58.3, 0, 1], [63.5, 58.3, 93, 58.3, 0, 1], ...[-60, 60].flatMap((px) => [[px - 3.5, 58.3, px - 3.5, 97.5, -1, 0], [px + 3.5, 58.3, px + 3.5, 97.5, 1, 0], [px - 3.5, 97.5, px + 3.5, 97.5, 0, 1]])]);
   for (const sx of [-60, 60]) {
-    w.block(sx, -1.1, 77.5, 7, 5.4, 40, 0x9c9384); w.addFloor(sx, 77.5, 3.5, 20, 0, 1.6, 0.4);
+    // The pier block starts at the quay's front edge (z 58.3). Until 2026-11-19 it began at 57.5, so its top and the
+    // quay's top, both at 1.6 m, overlapped in a strip 0.8 m deep and flickered (Roman saw it). The floor still
+    // overlaps the quay, so walking across the joint is unchanged.
+    w.block(sx, -1.1, 77.9, 7, 5.4, 39.2, 0x9c9384); w.addFloor(sx, 77.5, 3.5, 20, 0, 1.6, 0.4);
     for (let z = 62; z < 97; z += 9) { P('bollard', sx - 2.9, z, 0, { y: 1.6 }); P('bollard', sx + 2.9, z, 0, { y: 1.6 }); }
   }
   // Ships and boats afloat. Each is a single object so that it can rise, fall, and rock on the water.
@@ -34,7 +37,7 @@ export function buildLayout(game) {
   const afloat = (id, x, z, rot, y, noCollide, amount) => {
     const o = kit.spawn(id, x, z, rot, { y, noCollide }), rock = new THREE.Group();
     while (o.children.length) rock.add(o.children[0]);
-    o.add(rock); sites.afloat.push({ o, rock, y, k: amount, ph: x * 0.37 + z * 0.11 });
+    o.add(rock); sites.afloat.push({ id, o, rock, y, k: amount, ph: x * 0.37 + z * 0.11 });
   };
   afloat('ship_merchant', -67.3, 80, 0, 0.15, false, 1); afloat('ship_trireme', 67, 77.5, 0, 0.1, false, 0.7);
   afloat('ship_merchant', 14, 132, 0.5, 0.15, true, 1.4); afloat('boat_small', 22, 61.4, E, 0.1, true, 2.2); afloat('boat_small', -30, 61.6, Wd, 0.1, true, 2.2);   // 2 m clear of the quay front (58.3): nearer, the high quay edge hid half the hull and the boat looked jammed under it
@@ -280,6 +283,18 @@ export function buildLayout(game) {
   }
   for (let i = 0; i < 220; i++) { const a = rng() * PI * 2, r = rng() * 48, x = lyd[0] + Math.sin(a) * r, z = lyd[1] + Math.cos(a) * r; P('grass_tuft', x, z, rng() * 6.28, { zone: 'lydia', scale: 1 + rng() * 1.4, noCollide: true }); }
 
+  // Worn earth in front of each door, from just inside it out toward the street (2026-11-19), drawn before the
+  // things set by the doors so they stand on it. None where the ground in front is paved. scatter.js puts broken
+  // pottery on these paths (world.doorPaths).
+  const doorPaths = [];
+  for (const [id, p] of houses) {
+    if (id === 'house_c') continue;   // its door is inside its own yard
+    const d = p.anchor('door'); if (!d) continue;
+    const ox = Math.sin(p.rot), oz = Math.cos(p.rot);
+    if (w.surfaceAt(d.x + ox * 1.2, d.z + oz * 1.2) === 'stone' || !w.walkable(d.x + ox * 1.6, d.z + oz * 1.6)) continue;
+    doorPaths.push([[d.x - ox * 1.2, d.z - oz * 1.2], [d.x + ox * 3.6, d.z + oz * 3.6]]);
+  }
+  w.worn(doorPaths, 1.9, 0xcdbd9a, 0xc2b18d); w.doorPaths = doorPaths;
   dressTown(kit, w, houses, [sites.stallA, sites.stallB, sites.stallC, stallD]);   // doorways and market (props.js)
   kit.build();
   // Flames get a glow and a share of the night lights.

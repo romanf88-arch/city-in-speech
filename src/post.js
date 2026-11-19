@@ -273,6 +273,8 @@ uniform float uRedPull, uGlowFrom, uDebug, uFxaa;
 uniform vec2 uRcp;
 uniform mat4 uPrevVP;                   // the camera's view and projection in the last frame
 uniform vec4 uBlur;                     // x share of a frame's motion to smear (0 none), y longest smear (share of the screen height), z distance (m) within which nothing smears, w width over height
+uniform vec4 uFocus;                    // speaker depth, eased amount, blur radius in pixels, aspect
+uniform vec4 uShaft;                    // sun in screen coordinates, strength, aspect
 // The scene picture at this pixel. When the frame-rate guard draws the scene smaller than the screen, it is
 // stretched back up with plain smoothing. (A sharpening step was tried here and taken out on 2026-11-15: measured
 // against a picture drawn at twice the size, it nearly doubled the shimmer on cloth and walls while turning.)
@@ -350,6 +352,38 @@ vec3 blurred(vec2 uv, vec2 v, float z) {
   }
   return w > 0.0 ? s / w : texture2D(tScene, inScene(uv)).rgb;
 }
+// Background-only focus: the player and the speaker remain sharp. Depth rejection keeps
+// foreground silhouettes from bleeding into the harbor behind a person.
+vec3 focusBackground(vec2 uv, vec3 original, float depth) {
+  float amount = uFocus.y * smoothstep(uFocus.x + 1.3, uFocus.x + 9.0, depth);
+  if (amount < 0.01) return original;
+  float radius = uFocus.z * amount;
+  vec3 total = original; float weight = 1.0;
+  for (int i = 0; i < 12; i++) {
+    float a = float(i) * 2.399963;
+    float r = sqrt((float(i) + 0.5) / 12.0);
+    vec2 sampleUv = clamp(uv + vec2(cos(a), sin(a)) * r * radius * uRcp / uSc.xy, vec2(0.0), vec2(1.0));
+    float sampleDepth = -viewZ(sampleUv);
+    float accept = smoothstep(uFocus.x + 0.6, uFocus.x + 1.5, sampleDepth);
+    total += sceneAt(inScene(sampleUv)) * accept; weight += accept;
+  }
+  return mix(original, total / weight, amount);
+}
+// Radial light scattering from an occluded sun mask. Only runs while the sun is near
+// the view and depth is available. Solid roofs and leaves interrupt the source.
+vec3 sunlight(vec2 uv, float depth) {
+  if (uShaft.z < 0.002) return vec3(0.0);
+  vec2 delta = (uShaft.xy - uv) * 0.94 / 16.0;
+  vec2 p = uv; float light = 0.0, decay = 1.0;
+  for (int i = 0; i < 16; i++) {
+    p += delta;
+    vec2 q = (p - uShaft.xy) * vec2(uShaft.w, 1.0);
+    float open = step(0.99998, texture2D(tDepth, inScene(clamp(p, vec2(0.0), vec2(1.0)))).x);
+    light += exp(-dot(q, q) * 90.0) * open * decay;
+    decay *= 0.96;
+  }
+  return vec3(1.0, 0.77, 0.44) * (light / 16.0) * uShaft.z * smoothstep(2.0, 12.0, depth);
+}
 void main() {
   float d = texture2D(tDepth, inScene(vUv)).x;
   bool sky = d > 0.99999;
@@ -361,6 +395,8 @@ void main() {
     float px = length(v / uRcp);
     if (px > 1.0) sc = mix(sc, blurred(vUv, v, z), smoothstep(1.0, 3.0, px));
   }
+  if (uFocus.y > 0.01) sc = focusBackground(vUv, sc, -z);
+  sc += sunlight(vUv, -z);
   vec3 c = lookUnDisplay(sc, uGrade.x);
   if (uDebug > 2.5) { gl_FragColor = vec4(toSRGB(lookAces(c * uGrade.x)), 1.0); return; }
   float dist = length(Pv);
@@ -490,6 +526,7 @@ export class Post {
       uHaze: { value: new THREE.Vector4() }, uGrade: { value: new THREE.Vector4() }, uWarm: { value: new THREE.Vector3() }, uCool: { value: new THREE.Vector3() },
       uRedPull: { value: 0 }, uGlowFrom: { value: 1 }, uHazeFrom: { value: 20 }, uDebug: { value: 0 }, uFxaa: { value: 1 }, uRcp: { value: new THREE.Vector2() },
       uPrevVP: { value: new THREE.Matrix4() }, uBlur: { value: new THREE.Vector4() },
+      uFocus: { value: new THREE.Vector4(6, 0, 5.5, 1) }, uShaft: { value: new THREE.Vector4(0.5, 0.5, 0, 1) },
     });
     // Camera motion blur (see blurStep in COMPOSITE). It needs the depth picture, which the town has whenever it is
     // drawn without edge samples; ?blur=0 or F7 turns it off.
@@ -555,7 +592,10 @@ export class Post {
     const ex = r.toneMappingExposure, deep = inCave || this.forceDepth;
     // Without edge samples the town is drawn into the picture that keeps depth (the same cost), for FXAA and the
     // motion blur. The contact shade, the lit smoke, and the near haze still need `deep` (the cave, or forceDepth).
+    // The conversation focus and the sunlight shafts (polish.js) read this depth picture, but they never ask for it:
+    // drawing the town without edge samples just for them brought back the shimmer on clothes.
     const useD = deep || this.samples === 0;
+    if (g.polish) g.polish.prepare(camera);
     const S = this.scene = useD ? this.sceneD : this.sceneMS;
     const W = this.size.x, H = this.size.y;
     // The scene is drawn into the lower left part of its picture when the guard asks for a smaller size; the
@@ -619,6 +659,8 @@ export class Post {
     }
     // put it together on screen
     const c = this.mComp.uniforms;
+    if (g.polish && !this.neutral && useD) { c.uFocus.value.copy(g.polish.focus); c.uShaft.value.copy(g.polish.sun); }
+    else { c.uFocus.value.y = 0; c.uShaft.value.z = 0; }
     c.tScene.value = this.scene.texture; c.tAO.value = this.aoB.texture; c.tVol.value = this.volB.texture; c.tBloom.value = B[0].texture;
     c.uAOSize.value.set(this.aoB.width, this.aoB.height); c.uVolSize.value.set(this.volB.width, this.volB.height);
     const night = cur.stars > 0.5 || inCave;

@@ -160,6 +160,7 @@ export class World {
     this.H = new Float32Array((NX + 1) * (NZ + 1));
     this.floors = [];
     this.paved = new Map();                  // height of paving and streets by half-meter cell (see standY)
+    this.groundKinds = new Map();            // same cells, for footsteps and dust
     this.colliders = [];
     this.hash = new Map();
     this.chunks = [];
@@ -199,7 +200,18 @@ export class World {
   // Ground height including raised floors (platforms, piers).
   // Paving and streets are drawn a few centimeters above the ground under them, so that the ground never shows
   // through. People have to stand on what is drawn, or their feet are buried: these cells remember its height.
-  _mark(x, z, y) { const k = (Math.floor(x * 2) + 4096) * 8192 + Math.floor(z * 2) + 4096, o = this.paved.get(k); if (o === undefined || y > o) this.paved.set(k, y); }
+  _mark(x, z, y, kind = 'stone') { const k = (Math.floor(x * 2) + 4096) * 8192 + Math.floor(z * 2) + 4096, o = this.paved.get(k); if (o === undefined || y > o) { this.paved.set(k, y); this.groundKinds.set(k, kind); } }
+  surfaceAt(x, z) {
+    if (this.indoor(x, z)) return 'stone';
+    const key = (Math.floor(x * 2) + 4096) * 8192 + Math.floor(z * 2) + 4096;
+    if (this.groundKinds.has(key)) return this.groundKinds.get(key);
+    // The actual quay and two piers are stone, not timber.
+    for (const f of this.floors) {
+      const dx = x - f.x, dz = z - f.z;
+      if (Math.abs(dx * f.cos - dz * f.sin) <= f.hx && Math.abs(dx * f.sin + dz * f.cos) <= f.hz) return f.surface || 'stone';
+    }
+    return 'earth';
+  }
   // The height a person stands at: the paving where there is some, otherwise the ground or a raised floor.
   standY(x, z) { const y = this.groundY(x, z), p = this.paved.get((Math.floor(x * 2) + 4096) * 8192 + Math.floor(z * 2) + 4096); return p !== undefined && p > y && p < y + 0.4 ? p : y; }
   groundY(x, z) {
@@ -423,31 +435,54 @@ export class World {
 
   // A strip laid on the ground along a path.
   ribbon(path, width, hexA, hexB, lift = 0.06) {
+    const pos = [], col = [], extra = { edge: [], half: [] };
+    this._strip(pos, col, extra, path, width, hexA, hexB, lift);
+    return this._flatMesh(pos, col, true, 'street', extra);
+  }
+
+  // Short worn earth paths, all in one mesh: where people go in and out of doors (layout.js). Each path fades out at
+  // both ends, like a street.
+  worn(paths, width, hexA, hexB, lift = 0.06) {
+    const pos = [], col = [], extra = { edge: [], half: [] };
+    for (const path of paths) this._strip(pos, col, extra, path, width, hexA, hexB, lift);
+    return pos.length ? this._flatMesh(pos, col, true, 'street', extra) : null;
+  }
+
+  // The strip is cut into pieces about a meter across and 1.6 m along, each corner at its own ground height plus
+  // `lift`. (Until 2026-11-19 each piece spanned the whole width, up to 9 m, with only its two edges on the ground,
+  // so where the ground rose between them it covered the middle of the street.) `extra` collects, for each vertex,
+  // where it is across the strip (-1 to 1) and whether it is at either end (0, for the fade), and the half-width.
+  _strip(pos, col, extra, path, width, hexA, hexB, lift) {
     const pts = [];
     for (let i = 0; i < path.length - 1; i++) {
       const [ax, az] = path[i], [bx, bz] = path[i + 1], len = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(len / 1.6));
       for (let k = 0; k < n; k++) pts.push([lerp(ax, bx, k / n), lerp(az, bz, k / n)]);
     }
     pts.push(path[path.length - 1]);
-    const pos = [], col = [], ca = new THREE.Color(hexA), cb = new THREE.Color(hexB);
+    const ca = new THREE.Color(hexA), cb = new THREE.Color(hexB);
     const side = (i) => {
       const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
       const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1;
       const wob = width * (0.5 + 0.07 * Math.sin(i * 1.7));
       return [-dz / l * wob, dx / l * wob];
     };
+    const across = Math.max(1, Math.ceil(width / 1.0)), last = pts.length - 2;
     for (let i = 0; i < pts.length - 1; i++) {
-      const s0 = side(i), s1 = side(i + 1), a = pts[i], b = pts[i + 1];
-      const q = [[a[0] - s0[0], a[1] - s0[1]], [a[0] + s0[0], a[1] + s0[1]], [b[0] - s1[0], b[1] - s1[1]], [b[0] + s1[0], b[1] + s1[1]]]
-        .map(([x, z]) => [x, this.terrainY(x, z) + lift, z]);
-      for (let t = 0; t <= 1.001; t += 0.25) for (let u = 0.04; u <= 0.97; u += 0.4 / Math.max(0.5, width)) {
-        const m = (k) => lerp(lerp(q[0][k], q[1][k], u), lerp(q[2][k], q[3][k], u), t);
-        this._mark(m(0), m(2), m(1));
-      }
+      const s0 = side(i), s1 = side(i + 1), a = pts[i], b = pts[i + 1], hA = Math.hypot(s0[0], s0[1]), hB = Math.hypot(s1[0], s1[1]);
+      const q = [[a[0] - s0[0], a[1] - s0[1]], [a[0] + s0[0], a[1] + s0[1]], [b[0] - s1[0], b[1] - s1[1]], [b[0] + s1[0], b[1] + s1[1]]];
+      const at = (u, t) => { const x = lerp(lerp(q[0][0], q[1][0], u), lerp(q[2][0], q[3][0], u), t), z = lerp(lerp(q[0][1], q[1][1], u), lerp(q[2][1], q[3][1], u), t); return [x, this.terrainY(x, z) + lift, z]; };
+      for (let t = 0; t <= 1.001; t += 0.25) for (let u = 0.04; u <= 0.97; u += 0.4 / Math.max(0.5, width)) { const m = at(u, t); this._mark(m[0], m[2], m[1], 'earth'); }
       _c.copy(i % 2 ? ca : cb).multiplyScalar(0.95 + 0.1 * noise2(i * 0.7, 3));
-      for (const v of [q[0], q[2], q[1], q[1], q[2], q[3]]) { pos.push(v[0], v[1], v[2]); col.push(_c.r, _c.g, _c.b); }
+      for (let k = 0; k < across; k++) {
+        const u0 = k / across, u1 = (k + 1) / across;
+        // Wound to face up. (Until 2026-11-19 the order was u0-start, u0-end, u1-start, which faces down; the street
+        // material draws front faces only, so no street or door path was ever drawn.)
+        for (const [u, t] of [[u0, 0], [u1, 0], [u0, 1], [u1, 0], [u1, 1], [u0, 1]]) {
+          const v = at(u, t); pos.push(v[0], v[1], v[2]); col.push(_c.r, _c.g, _c.b);
+          extra.edge.push(u * 2 - 1, (i === 0 && t === 0) || (i === last && t === 1) ? 0 : 1); extra.half.push(t ? hB : hA);
+        }
+      }
     }
-    return this._flatMesh(pos, col, true, 'street');
   }
 
   // A tiled pavement over a rectangle.
@@ -465,11 +500,12 @@ export class World {
 
   // kind is 'pave' or 'street'. If the game has attached realistic surfaces (this.surface, see
   // surfaces.js) they supply the material: stone slabs for paving, packed earth for streets.
-  _flatMesh(pos, col, offset, kind) {
+  _flatMesh(pos, col, offset, kind, extra) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     g.computeVertexNormals();
+    if (extra) { g.setAttribute('aEdge', new THREE.Float32BufferAttribute(extra.edge, 2)); g.setAttribute('aHalf', new THREE.Float32BufferAttribute(extra.half, 1)); }   // streets: see _strip
     const mat = (this.surface && kind && this.surface.flat(g, kind)) || new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: !!offset, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const m = new THREE.Mesh(g, mat); m.receiveShadow = true;
     this.group.add(m);

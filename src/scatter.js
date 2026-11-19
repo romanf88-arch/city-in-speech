@@ -188,6 +188,28 @@ export class Scatter {
       }
     }
 
+    // 5. Broken pottery on the earth streets, and a few pieces and stones on the worn ground in front of doors, where
+    //    it was dropped or swept out (2026-11-19). A random sequence of its own, so everything above stays put.
+    const rng2 = mulberry32(2718);
+    const lay = (kind, x, z, s, hex) => {
+      col.set(hex).multiplyScalar(0.85 + rng2() * 0.3);
+      this.kinds[kind].list.push({ x, y: w.standY(x, z), z, s, sy: kind === 'pebble' ? 0.35 + rng2() * 0.4 : 1, yaw: rng2() * 6.283, tilt: (rng2() - 0.5) * 0.6, r: col.r, gg: col.g, b: col.b, tile: 0 });
+    };
+    const potHex = () => { const r = rng2(); return r < 0.7 ? 0xa45a36 : r < 0.85 ? 0x3a302a : 0xc9a27a; };   // red clay, black glaze, plain buff
+    for (let i = 0; i < 30000; i++) {
+      const x = TOWN.x0 + rng2() * (TOWN.x1 - TOWN.x0), z = -84 + rng2() * (TOWN.z1 + 84);
+      if (!onPaving(x, z) || inPaving(x, z) || w.surfaceAt(x, z) !== 'earth' || !free(x, z, 0.1)) continue;
+      if (rng2() < 0.03) lay('shard', x, z, 0.08 + rng2() * 0.1, potHex());
+    }
+    for (const [[ax, az], [bx, bz]] of w.doorPaths || []) {
+      const n = 2 + Math.floor(rng2() * 4);
+      for (let k = 0; k < n; k++) {
+        const t = 0.35 + rng2() * 0.6, x = ax + (bx - ax) * t + (rng2() - 0.5) * 2.4, z = az + (bz - az) * t + (rng2() - 0.5) * 2.4;
+        if (!free(x, z, 0.05)) continue;
+        if (rng2() < 0.6) lay('shard', x, z, 0.07 + rng2() * 0.09, potHex()); else lay('pebble', x, z, 0.05 + rng2() * 0.07, rng2() < 0.5 ? 0xb3a488 : 0x9f927c);
+      }
+    }
+
     // Instanced meshes, each big enough for all its things; the near set fills the front of the buffers.
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
     for (const kind in this.kinds) {
