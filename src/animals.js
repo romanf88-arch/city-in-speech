@@ -70,7 +70,7 @@ export class Animal {
     this.t = seed * 1.31; this.phase = seed * 0.9; this.wk = 0; this.gz = 0; this.si = 0; this.sl = 0; this.fl = 0; this.flick = 0; this.flickT = 1 + (seed % 5); this.earT = 2 + (seed % 3); this.ear = 0; this.flap = 1;
     const b = new Builder(seed * 17 + 3), rig = this.rig = new Rig(), r = mulberry32(seed * 53 + 11);
     b.tv = 0.03;   // an even coat: the grain comes from the material
-    if (kind === 'chicken') this._chicken(b, rig, r); else if (kind === 'gull' || kind === 'pigeon') this._gull(b, rig, r); else this._quad(b, rig, r, QUAD[kind] || QUAD.goat);
+    if (kind === 'chicken') this._chicken(b, rig, r); else if (kind === 'gull' || kind === 'pigeon' || kind === 'swallow') this._gull(b, rig, r); else this._quad(b, rig, r, QUAD[kind] || QUAD.goat);
     this.bones = rig.by; this.triangles = b.tris;
     const geo = toCreasedNormals(b.geometry(), 1.2);   // smooth across the body, sharp at hooves, eyes, and the like
     // Wool on the sheep's body, neck, and upper legs; short hair or feathers everywhere else.
@@ -172,17 +172,25 @@ export class Animal {
   }
 
   // The gull, and (2026-11-19) the pigeon of the market square: the same bird in grey-blue, with a darker head, dark
-  // bars across the wings and a dark beak, drawn at a little over half the size (pigeons.js scales it).
+  // bars across the wings and a dark beak, drawn at a little over half the size (pigeons.js scales it). And the
+  // swallow: dark blue-black, with long swept-back wings and a forked tail, drawn at about a quarter (swallows.js).
   _gull(b, rig) {
-    const pg = this.kind === 'pigeon', R = {}, W = pg ? 0x8e95a2 : 0xf0f0ec, G = pg ? 0x9ea4ae : 0xa8b0b8, K = pg ? 0x3c3f48 : 0x2e2e30; this.H = 0.12;
+    const pg = this.kind === 'pigeon', sw = this.kind === 'swallow', R = {}, W = sw ? 0x232a3c : pg ? 0x8e95a2 : 0xf0f0ec, G = sw ? 0x272e42 : pg ? 0x9ea4ae : 0xa8b0b8, K = sw ? 0x15181f : pg ? 0x3c3f48 : 0x2e2e30; this.H = 0.12;
+    const q = (p, hex, bone) => { for (const o of [[0, 1, 0], [0, -1, 0]]) { b.out = o; b.quad(p[0], p[1], p[2], p[3], hex, bone); } b.out = null; };
     R.root = rig.add('root', null, 0, 0, 0); R.body = rig.add('body', 'root', 0, 0.12, 0);
     b.loftZ([{ z: -0.2, rx: 0.015, ry: 0.012, y: 0.125 }, { z: -0.08, rx: 0.055, ry: 0.05, y: 0.12 }, { z: 0.07, rx: 0.06, ry: 0.055, y: 0.12 }, { z: 0.13, rx: 0.04, ry: 0.04, y: 0.13 }], 9, R.body, W);
-    b.ball(0, 0.145, 0.15, 0.034, 0.033, 0.042, pg ? 0x6c7280 : W, R.body);   // head
-    b.rod([0, 0.142, 0.185], [0, 0.135, 0.235], 0.01, pg ? 0x4a4240 : 0xd9a93c, R.body, 5, 0.003);
-    b.out = [0, 1, 0]; b.quad([-0.06, 0.125, -0.19], [0.06, 0.125, -0.19], [0.025, 0.125, -0.3], [-0.025, 0.125, -0.3], W, R.body); b.out = null;
+    b.ball(0, 0.145, 0.15, 0.034, 0.033, 0.042, sw ? 0x1e2434 : pg ? 0x6c7280 : W, R.body);   // head
+    b.rod([0, 0.142, 0.185], [0, 0.135, 0.235], 0.01, sw ? 0x1a1a1a : pg ? 0x4a4240 : 0xd9a93c, R.body, 5, 0.003);
+    if (sw) for (const sx of [1, -1]) q([[sx * 0.005, 0.125, -0.19], [sx * 0.05, 0.125, -0.19], [sx * 0.1, 0.125, -0.46], [sx * 0.07, 0.125, -0.46]], W, R.body);   // the fork
+    else { b.out = [0, 1, 0]; b.quad([-0.06, 0.125, -0.19], [0.06, 0.125, -0.19], [0.025, 0.125, -0.3], [-0.025, 0.125, -0.3], W, R.body); b.out = null; }
     for (const sx of [1, -1]) {
       const w1 = rig.add(sx > 0 ? 'wingL' : 'wingR', 'body', sx * 0.04, 0.15, 0.03), w2 = rig.add(sx > 0 ? 'tipL' : 'tipR', sx > 0 ? 'wingL' : 'wingR', sx * 0.3, 0.15, 0.02);
-      const q = (p, hex, bone) => { for (const o of [[0, 1, 0], [0, -1, 0]]) { b.out = o; b.quad(p[0], p[1], p[2], p[3], hex, bone); } b.out = null; };
+      if (sw) {   // long, narrow, swept back
+        q([[sx * 0.04, 0.15, 0.08], [sx * 0.28, 0.15, 0.02], [sx * 0.28, 0.15, -0.06], [sx * 0.04, 0.15, -0.05]], G, w1);
+        q([[sx * 0.28, 0.15, 0.02], [sx * 0.52, 0.15, -0.12], [sx * 0.5, 0.15, -0.16], [sx * 0.28, 0.15, -0.06]], shade(G, 0.92), w2);
+        q([[sx * 0.52, 0.15, -0.12], [sx * 0.68, 0.15, -0.27], [sx * 0.64, 0.15, -0.28], [sx * 0.5, 0.15, -0.16]], K, w2);
+        continue;
+      }
       q([[sx * 0.04, 0.15, 0.1], [sx * 0.3, 0.15, 0.08], [sx * 0.3, 0.15, -0.05], [sx * 0.04, 0.15, -0.06]], G, w1);
       q([[sx * 0.3, 0.15, 0.08], [sx * 0.5, 0.15, 0.04], [sx * 0.49, 0.15, -0.05], [sx * 0.3, 0.15, -0.05]], shade(G, 0.92), w2);
       q([[sx * 0.5, 0.15, 0.04], [sx * 0.62, 0.15, 0.0], [sx * 0.6, 0.15, -0.05], [sx * 0.49, 0.15, -0.05]], K, w2);   // black wingtips
@@ -198,9 +206,10 @@ export class Animal {
     this.earT -= dt; if (this.earT <= 0) { this.ear = 0.35; this.earT = 2 + 5 * Math.abs(Math.sin(t * 3.3 + this.seed * 2)); }
     this.flick = Math.max(0, this.flick - dt); this.ear = Math.max(0, this.ear - dt);
     const wk = this.wk, gz = this.gz, si = this.si, sl = this.sl, up = 1 - sl, d = this.d;
-    if (this.kind === 'gull' || this.kind === 'pigeon') {
-      const fl = this.fl, pg = this.kind === 'pigeon'; this.flap = damp(this.flap, pg || Math.sin(t * 0.37 + this.seed) > -0.2 ? 1 : 0.12, 2, dt);
-      this.phase += dt * (pg ? 17 : 11) * (0.6 + 0.4 * this.flap);
+    if (this.kind === 'gull' || this.kind === 'pigeon' || this.kind === 'swallow') {
+      const fl = this.fl, pg = this.kind === 'pigeon', sw = this.kind === 'swallow';
+      this.flap = damp(this.flap, pg || (sw ? Math.sin(t * 1.7 + this.seed) > -0.15 : Math.sin(t * 0.37 + this.seed) > -0.2) ? 1 : sw ? 0.08 : 0.12, sw ? 6 : 2, dt);   // a swallow beats in bursts and glides between
+      this.phase += dt * (sw ? 26 : pg ? 17 : 11) * (0.6 + 0.4 * this.flap);
       const a = Math.sin(this.phase) * 0.6 * this.flap + 0.12, a2 = Math.sin(this.phase - 0.9) * 0.45 * this.flap - 0.1;
       for (const [sx, s] of [[1, 'L'], [-1, 'R']]) { B['wing' + s].rotation.set(0, sx * 1.35 * (1 - fl), sx * a * fl); B['tip' + s].rotation.set(0, sx * 0.3 * (1 - fl), sx * a2 * fl); }
       const u = (t * 0.55 + this.seed * 0.37) % 1, pk = pg ? gz * (1 - fl) * (u < 0.5 ? Math.abs(Math.sin(u * 12.57)) : 0) : 0;   // a pigeon nods down to peck
@@ -238,4 +247,4 @@ export class Animal {
     this.sync();
   }
 }
-export const ANIMAL_KINDS = ['goat', 'kid', 'sheep', 'donkey', 'dog', 'chicken', 'gull', 'pigeon'], ANIMAL_STATES = STATES;
+export const ANIMAL_KINDS = ['goat', 'kid', 'sheep', 'donkey', 'dog', 'chicken', 'gull', 'pigeon', 'swallow'], ANIMAL_STATES = STATES;

@@ -11,6 +11,7 @@ import { setupCloudShade } from './cloudshade.js';
 import { setupHarborBoats } from './harbor-boats.js';
 import { QuayDog } from './quay-dog.js';
 import { Pigeons } from './pigeons.js';
+import { Swallows } from './swallows.js';
 
 const game = new Game();
 window.game = game;   // test seam and console access
@@ -41,6 +42,7 @@ async function boot() {
     setupVolume(game);   // Sound and Music sliders (volume.js)
     game.quayDog = new QuayDog(game);   // a dog that takes up with you on the quay (quay-dog.js)
     game.pigeons = new Pigeons(game);   // pigeons on the market square (pigeons.js)
+    game.swallows = new Swallows(game);   // swallows over the square and the quay (swallows.js)
     setupHarborBoats(game);   // a rowboat and a ship under sail that move (harbor-boats.js)
     setupCloudShade(game);   // shadows of the clouds on everything lit (cloudshade.js); after everything is built
     progress(1);
