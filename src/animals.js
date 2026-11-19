@@ -70,7 +70,7 @@ export class Animal {
     this.t = seed * 1.31; this.phase = seed * 0.9; this.wk = 0; this.gz = 0; this.si = 0; this.sl = 0; this.fl = 0; this.flick = 0; this.flickT = 1 + (seed % 5); this.earT = 2 + (seed % 3); this.ear = 0; this.flap = 1;
     const b = new Builder(seed * 17 + 3), rig = this.rig = new Rig(), r = mulberry32(seed * 53 + 11);
     b.tv = 0.03;   // an even coat: the grain comes from the material
-    if (kind === 'chicken') this._chicken(b, rig, r); else if (kind === 'gull') this._gull(b, rig, r); else this._quad(b, rig, r, QUAD[kind] || QUAD.goat);
+    if (kind === 'chicken') this._chicken(b, rig, r); else if (kind === 'gull' || kind === 'pigeon') this._gull(b, rig, r); else this._quad(b, rig, r, QUAD[kind] || QUAD.goat);
     this.bones = rig.by; this.triangles = b.tris;
     const geo = toCreasedNormals(b.geometry(), 1.2);   // smooth across the body, sharp at hooves, eyes, and the like
     // Wool on the sheep's body, neck, and upper legs; short hair or feathers everywhere else.
@@ -171,12 +171,14 @@ export class Animal {
     for (const sx of [1, -1]) { const lg = rig.add(sx > 0 ? 'legL' : 'legR', 'body', sx * 0.035, H - 0.05, 0); b.rod([sx * 0.035, H - 0.03, 0], [sx * 0.035, 0.01, 0], 0.01, YEL, lg, 5, 0.008); for (const a of [-0.45, 0, 0.45]) b.rod([sx * 0.035, 0.006, 0], [sx * 0.035 + Math.sin(a) * 0.04, 0.004, Math.cos(a) * 0.04], 0.005, YEL, lg, 4, 0.003); }
   }
 
+  // The gull, and (2026-11-19) the pigeon of the market square: the same bird in grey-blue, with a darker head, dark
+  // bars across the wings and a dark beak, drawn at a little over half the size (pigeons.js scales it).
   _gull(b, rig) {
-    const R = {}, W = 0xf0f0ec, G = 0xa8b0b8, K = 0x2e2e30; this.H = 0.12;
+    const pg = this.kind === 'pigeon', R = {}, W = pg ? 0x8e95a2 : 0xf0f0ec, G = pg ? 0x9ea4ae : 0xa8b0b8, K = pg ? 0x3c3f48 : 0x2e2e30; this.H = 0.12;
     R.root = rig.add('root', null, 0, 0, 0); R.body = rig.add('body', 'root', 0, 0.12, 0);
     b.loftZ([{ z: -0.2, rx: 0.015, ry: 0.012, y: 0.125 }, { z: -0.08, rx: 0.055, ry: 0.05, y: 0.12 }, { z: 0.07, rx: 0.06, ry: 0.055, y: 0.12 }, { z: 0.13, rx: 0.04, ry: 0.04, y: 0.13 }], 9, R.body, W);
-    b.ball(0, 0.145, 0.15, 0.034, 0.033, 0.042, W, R.body);   // head
-    b.rod([0, 0.142, 0.185], [0, 0.135, 0.235], 0.01, 0xd9a93c, R.body, 5, 0.003);
+    b.ball(0, 0.145, 0.15, 0.034, 0.033, 0.042, pg ? 0x6c7280 : W, R.body);   // head
+    b.rod([0, 0.142, 0.185], [0, 0.135, 0.235], 0.01, pg ? 0x4a4240 : 0xd9a93c, R.body, 5, 0.003);
     b.out = [0, 1, 0]; b.quad([-0.06, 0.125, -0.19], [0.06, 0.125, -0.19], [0.025, 0.125, -0.3], [-0.025, 0.125, -0.3], W, R.body); b.out = null;
     for (const sx of [1, -1]) {
       const w1 = rig.add(sx > 0 ? 'wingL' : 'wingR', 'body', sx * 0.04, 0.15, 0.03), w2 = rig.add(sx > 0 ? 'tipL' : 'tipR', sx > 0 ? 'wingL' : 'wingR', sx * 0.3, 0.15, 0.02);
@@ -196,12 +198,13 @@ export class Animal {
     this.earT -= dt; if (this.earT <= 0) { this.ear = 0.35; this.earT = 2 + 5 * Math.abs(Math.sin(t * 3.3 + this.seed * 2)); }
     this.flick = Math.max(0, this.flick - dt); this.ear = Math.max(0, this.ear - dt);
     const wk = this.wk, gz = this.gz, si = this.si, sl = this.sl, up = 1 - sl, d = this.d;
-    if (this.kind === 'gull') {
-      const fl = this.fl; this.flap = damp(this.flap, Math.sin(t * 0.37 + this.seed) > -0.2 ? 1 : 0.12, 2, dt);
-      this.phase += dt * 11 * (0.6 + 0.4 * this.flap);
+    if (this.kind === 'gull' || this.kind === 'pigeon') {
+      const fl = this.fl, pg = this.kind === 'pigeon'; this.flap = damp(this.flap, pg || Math.sin(t * 0.37 + this.seed) > -0.2 ? 1 : 0.12, 2, dt);
+      this.phase += dt * (pg ? 17 : 11) * (0.6 + 0.4 * this.flap);
       const a = Math.sin(this.phase) * 0.6 * this.flap + 0.12, a2 = Math.sin(this.phase - 0.9) * 0.45 * this.flap - 0.1;
       for (const [sx, s] of [[1, 'L'], [-1, 'R']]) { B['wing' + s].rotation.set(0, sx * 1.35 * (1 - fl), sx * a * fl); B['tip' + s].rotation.set(0, sx * 0.3 * (1 - fl), sx * a2 * fl); }
-      B.body.rotation.set(-0.05 * fl, 0, -this.bank * fl); this.sync(); return;
+      const u = (t * 0.55 + this.seed * 0.37) % 1, pk = pg ? gz * (1 - fl) * (u < 0.5 ? Math.abs(Math.sin(u * 12.57)) : 0) : 0;   // a pigeon nods down to peck
+      B.body.rotation.set(-0.05 * fl + 0.55 * pk, 0, -this.bank * fl); this.sync(); return;
     }
     if (this.kind === 'chicken') {
       this.phase += this.speed * dt * 22;
@@ -235,4 +238,4 @@ export class Animal {
     this.sync();
   }
 }
-export const ANIMAL_KINDS = ['goat', 'kid', 'sheep', 'donkey', 'dog', 'chicken', 'gull'], ANIMAL_STATES = STATES;
+export const ANIMAL_KINDS = ['goat', 'kid', 'sheep', 'donkey', 'dog', 'chicken', 'gull', 'pigeon'], ANIMAL_STATES = STATES;

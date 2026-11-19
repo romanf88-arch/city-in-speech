@@ -3,7 +3,8 @@
 import * as THREE from 'three';
 import { getNoise } from './world.js';
 
-const WAVE_VERTEX = [
+export const WAVE_VERTEX = [   // also used by the moving boats' wakes (harbor-boats.js)
+
   'uniform float uTime;',
   'vec3 waterPoint(vec3 p) {',
   'vec3 origin = p; float fade = 1.0 - smoothstep(160.0,300.0,length(p.xz-vec2(0.0,70.0)));',

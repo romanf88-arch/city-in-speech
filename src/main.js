@@ -9,7 +9,8 @@ import { DockGulls } from './dock-gulls.js';
 import { setupVolume } from './volume.js';
 import { setupCloudShade } from './cloudshade.js';
 import { setupHarborBoats } from './harbor-boats.js';
-import { setupDoorways } from './doorways.js';
+import { QuayDog } from './quay-dog.js';
+import { Pigeons } from './pigeons.js';
 
 const game = new Game();
 window.game = game;   // test seam and console access
@@ -38,7 +39,8 @@ async function boot() {
     game.interactions = new InteractionEffects(game);
     game.dockGulls = new DockGulls(game);
     setupVolume(game);   // Sound and Music sliders (volume.js)
-    setupDoorways(game);   // doors standing open onto a room (doorways.js)
+    game.quayDog = new QuayDog(game);   // a dog that takes up with you on the quay (quay-dog.js)
+    game.pigeons = new Pigeons(game);   // pigeons on the market square (pigeons.js)
     setupHarborBoats(game);   // a rowboat and a ship under sail that move (harbor-boats.js)
     setupCloudShade(game);   // shadows of the clouds on everything lit (cloudshade.js); after everything is built
     progress(1);
