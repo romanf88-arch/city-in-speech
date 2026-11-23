@@ -149,7 +149,8 @@ export function setupPlaces(g) {
   shownAt.harbor = 0;
   g.tickers.push((dt) => {
     clothUniforms.uClothTime.value = g.time;
-    clothUniforms.uClothWind.value = g.reduceMotion ? 0 : Math.min(1.7, g.sky.cur.wind || 0);
+    // The cloth moves less between gusts and more in one (gusts.js, 2026-11-19): 0.75 to 1.35 times what it was.
+    clothUniforms.uClothWind.value = g.reduceMotion ? 0 : Math.min(1.7, g.sky.cur.wind || 0) * (0.75 + 0.6 * (g.gusts ? g.gusts.v : 0.4));
     const p = g.player, world = g.space === 'world', d = world ? districtAt(p.x, p.z) : null, L = d ? d.look : N, k = 1 - Math.exp(-0.7 * dt);
     const S = (v) => 1 + (v - 1) * STRENGTH, to = { ex: S(L.ex), color: S(L.color), contrast: S(L.contrast), haze: S(L.haze), wr: S(L.warm[0]), wg: S(L.warm[1]), wb: S(L.warm[2]), cr: S(L.cool[0]), cg: S(L.cool[1]), cb: S(L.cool[2]) };
     for (const key in cur) cur[key] += (to[key] - cur[key]) * k;
@@ -179,7 +180,8 @@ export function setupPlaces(g) {
       const edge = world ? Math.max(0, 58.3 - p.z) : 99, sea = edge >= 20 ? 0 : Math.pow(1 - edge / 20, 2);      // 58.3 is the quay front; at 20 m the quay paving ends
       const air = g.space === 'cave' ? 0 : g.space === 'lydia' ? 0.016 : d && d.id === 'hill' ? 0.022 : d && (d.id === 'fields' || d.id === 'stakes') ? 0.016 : d && d.id === 'harbor' ? 0.006 : 0.008;   // at the harbor the wind is kept under the sea, or its steady hiss hides the swells
       if (g.audio.sea) g.audio.sea(sea);
-      g.audio.mix({ wind: air * Math.min(2, wind), cave: g.space === 'cave' ? 0.045 : 0, open: air >= 0.016 ? 1 : 0, windK: wind });   // the wind comes in gusts (audio.js, gusts)
+      if (g.gusts) g.gusts.place(air >= 0.016 ? 1 : 0, wind);
+      g.audio.mix({ wind: air * Math.min(2, wind), cave: g.space === 'cave' ? 0.045 : 0, gust: g.gusts ? g.gusts.at(g.gusts.t + 0.25) : 0 });   // the wind comes in gusts (gusts.js)
     }
   });
   g.places = { districtAt, cur };

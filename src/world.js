@@ -663,7 +663,7 @@ float hazeAmount(float d, float vz, float y0, float y1, float cap, float nearK) 
 }`;
 
 // Cloud cover for a view direction. Used by the dome and by the stars (which hide behind clouds).
-const CLOUD_GLSL = /* glsl */`
+export const CLOUD_GLSL = /* glsl */`
 uniform sampler2D uNoise;
 uniform vec4 uCloud;                      // x low cloud cover, y high cloud cover
 uniform vec4 uOff;                        // drift of the low layer (xy) and the high layer (zw)
@@ -686,7 +686,7 @@ vec4 cloudField(vec3 d, out float rbase, out vec2 q) {
 }`;
 
 // Clear sky color: deep overhead, pale at the horizon, warm around the sun.
-const ATMOS_GLSL = /* glsl */`
+export const ATMOS_GLSL = /* glsl */`
 vec3 atmosphere(vec3 d, float mu) {
   float y = max(d.y, 0.0);
   vec2 hd = normalize(d.xz + vec2(1e-5, 0.0)), hs = normalize(uSunDir.xz + vec2(1e-5, 0.0));
