@@ -275,6 +275,7 @@ uniform mat4 uPrevVP;                   // the camera's view and projection in t
 uniform vec4 uBlur;                     // x share of a frame's motion to smear (0 none), y longest smear (share of the screen height), z distance (m) within which nothing smears, w width over height
 uniform vec4 uFocus;                    // speaker depth, eased amount, blur radius in pixels, aspect
 uniform vec4 uShaft;                    // sun in screen coordinates, strength, aspect
+uniform float uFresco;                  // optional pigment palette; no extra render pass or texture
 // The scene picture at this pixel. When the frame-rate guard draws the scene smaller than the screen, it is
 // stretched back up with plain smoothing. (A sharpening step was tried here and taken out on 2026-11-15: measured
 // against a picture drawn at twice the size, it nearly doubled the shimmer on cloth and walls while turning.)
@@ -434,6 +435,15 @@ void main() {
   float l2 = dot(c, LW);
   float lc = mix(l2, l2 * l2 * (3.0 - 2.0 * l2), uGrade.z);
   c *= lc / max(l2, 1e-4);
+  if (uFresco > 0.5) {
+    float pigmentLight = dot(c, LW);
+    vec3 pigment = mix(vec3(pigmentLight), c, 0.72) * vec3(1.07, 1.0, 0.86);
+    // Broad pigment values and fixed plaster grain, with enough continuous color left for skies.
+    float band = floor(pigmentLight * 12.0 + 0.5) / 12.0;
+    pigment *= mix(1.0, (band + 0.10) / (pigmentLight + 0.10), 0.3);
+    float plaster = ign(floor(gl_FragCoord.xy * 0.45));
+    c = mix(pigment, vec3(0.96, 0.90, 0.76), 0.045) + (plaster - 0.5) * 0.018;
+  }
   c += (ign(gl_FragCoord.xy) + ign(gl_FragCoord.xy + 37.0) - 1.0) / 255.0;
   gl_FragColor = vec4(c, 1.0);
 }`;
@@ -527,6 +537,7 @@ export class Post {
       uRedPull: { value: 0 }, uGlowFrom: { value: 1 }, uHazeFrom: { value: 20 }, uDebug: { value: 0 }, uFxaa: { value: 1 }, uRcp: { value: new THREE.Vector2() },
       uPrevVP: { value: new THREE.Matrix4() }, uBlur: { value: new THREE.Vector4() },
       uFocus: { value: new THREE.Vector4(6, 0, 5.5, 1) }, uShaft: { value: new THREE.Vector4(0.5, 0.5, 0, 1) },
+      uFresco: { value: 0 },
     });
     // Camera motion blur (see blurStep in COMPOSITE). It needs the depth picture, which the town has whenever it is
     // drawn without edge samples; ?blur=0 or F7 turns it off.
@@ -659,7 +670,8 @@ export class Post {
     }
     // put it together on screen
     const c = this.mComp.uniforms;
-    if (g.polish && !this.neutral && useD) { c.uFocus.value.copy(g.polish.focus); c.uShaft.value.copy(g.polish.sun); }
+    c.uFresco.value = !this.neutral && g.polish?.options.fresco ? 1 : 0;
+    if (g.polish && !this.neutral && useD && !this.lite) { c.uFocus.value.copy(g.polish.focus); c.uShaft.value.copy(g.polish.sun); }   // (lite: the guard's last steps, game.js RUNGS)
     else { c.uFocus.value.y = 0; c.uShaft.value.z = 0; }
     c.tScene.value = this.scene.texture; c.tAO.value = this.aoB.texture; c.tVol.value = this.volB.texture; c.tBloom.value = B[0].texture;
     c.uAOSize.value.set(this.aoB.width, this.aoB.height); c.uVolSize.value.set(this.volB.width, this.volB.height);
@@ -697,7 +709,7 @@ export class Post {
     this._vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     camera.getWorldDirection(this._dir);
     const cut = !this.havePrev || camera.position.distanceTo(this.prevPos) > 3 || this._dir.dot(this.prevDir) < 0.88;
-    this.blurOn = this.blur && useD && !this.neutral && !cut;
+    this.blurOn = this.blur && useD && !this.neutral && !this.lite && !cut;
     const p = g.player, keep = g.mode === 'play' && g.cam && g.cam.mode === 'follow' && p ? camera.position.distanceTo(this._chest.set(p.x, p.y + 1.2, p.z)) + 0.6 : 0;
     c.uPrevVP.value.copy(this.prevVP);
     c.uBlur.value.set(this.blurOn ? L.blurShare : 0, L.blurMax, keep, camera.aspect);

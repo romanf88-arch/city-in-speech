@@ -7,7 +7,7 @@ import { Fires } from './fire.js';
 import { Flora } from './flora.js';
 import { Surfaces } from './surfaces.js';
 import { Kit } from './kit.js';
-import { Actor, makeProp, poseQueued } from './actors.js';
+import { Actor, makeProp, poseQueued, prepareLevels } from './actors.js';
 import { UI } from './ui.js';
 import { Audio } from './audio.js';
 import { Post } from './post.js';
@@ -37,6 +37,13 @@ const RUNGS = [
   { samples: 0, scale: 0.85, glow: true, shadow: 1024 },
   { samples: 0, scale: 0.7, glow: true, shadow: 1024 },
   { samples: 0, scale: 0.7, glow: false, shadow: 1024 },
+  // (2026-11-23) Two more steps, for full screen on a slow chip, where the step above left no margin under the 33 ms of
+  // a frame at 30 a second. On these the sunlight shafts and the motion blur are off too (lite). Measured 2026-11-23 on Intel UHD 620 at
+  // 1920x1080, GPU ms a frame in the market and the main street: step 6 34 to 38, step 7 about 25, step 8 about 24
+  // (below 60% most of what is left does not shrink with the picture: shadows, buildings, the finishing pass).
+  // (A smaller shadow area round the player, 24 m instead of 34, was tried on these and saved nothing measurable.)
+  { samples: 0, scale: 0.6, glow: false, shadow: 1024, lite: true },
+  { samples: 0, scale: 0.5, glow: false, shadow: 1024, lite: true },
 ];
 const RUNG_KEY = 'city-in-speech-rung';   // the last step, so the next visit starts there instead of stuttering first
 const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight', 'Space', 'KeyE', 'Enter']);
@@ -105,9 +112,15 @@ export class NPC {
       const ph = player.heading, sn = Math.sin(ph), cs = Math.cos(ph), hx = player.x - sn * 1.3 + cs * 1.0, hz = player.z - cs * 1.3 - sn * 1.0;
       const dx = hx - a.x, dz = hz - a.z, d = Math.hypot(dx, dz), pd = Math.hypot(player.x - a.x, player.z - a.z);
       if (pd > 24 || (this.stuck || 0) > 2.5) {
+        // Catch up: appear beside the player, on a spot clear of everything. (Until 2026-11-23 only things taller than
+        // 1.6 m counted, so she could appear inside an altar, a table or a bench; Roman saw her standing in
+        // Cephalus's altar.) Tries the usual places, then a ring round the player, then the nearest clear point.
+        const clear = (x, z) => { if (!sp.walkable(x, z)) return false; const q = sp.resolve(x, z, 0.32); return Math.hypot(q[0] - x, q[1] - z) < 0.02 && !sp.solidAt(x, 1, z, 0.3); };
+        const spots = [[hx, hz], [player.x - sn * 1.4, player.z - cs * 1.4], [player.x + cs * 1.2, player.z - sn * 1.2], [player.x - cs * 1.2, player.z + sn * 1.2]];
+        for (const r of [1.4, 2.2]) for (let k = 0; k < 8; k++) spots.push([player.x + Math.sin(ph + Math.PI + k * Math.PI / 4) * r, player.z + Math.cos(ph + Math.PI + k * Math.PI / 4) * r]);
         let ok = false;
-        for (const [bx, bz] of [[hx, hz], [player.x - sn * 1.4, player.z - cs * 1.4], [player.x + cs * 1.2, player.z - sn * 1.2], [player.x - cs * 1.2, player.z + sn * 1.2]]) if (sp.walkable(bx, bz) && !sp.solidAt(bx, 1, bz, 0.3)) { a.x = bx; a.z = bz; ok = true; break; }
-        if (!ok) { a.x = player.x; a.z = player.z; }
+        for (const [bx, bz] of spots) if (clear(bx, bz)) { a.x = bx; a.z = bz; ok = true; break; }
+        if (!ok) { const q = sp.resolve(player.x - sn * 0.9, player.z - cs * 0.9, 0.32); a.x = q[0]; a.z = q[1]; }
         a.heading = ph; a.y = sp.ground(a.x, a.z); this.stuck = 0; this.moving = false;
       } else if (d > (this.moving ? 0.3 : 1.1)) {
         this.moving = true;
@@ -118,7 +131,10 @@ export class NPC {
         for (const o of this.g.npcs.values()) { if (o === this || o.hidden || o.space !== this.space) continue; const ex = nx - o.actor.x, ez = nz - o.actor.z, e = Math.hypot(ex, ez); if (e < 0.75 && e > 0.001) { nx += ex / e * (0.75 - e); nz += ez / e * (0.75 - e); } }
         [nx, nz] = sp.resolve(nx, nz, 0.28);
         if (sp.walkable(nx, nz) && Math.hypot(nx - a.x, nz - a.z) > v * dt * 0.25) { a.x = nx; a.z = nz; a.speed = v; this.stuck = 0; } else this.stuck = (this.stuck || 0) + dt;
-      } else { this.moving = false; this.stuck = 0; if (Math.abs(player.speed) < 0.3) a.heading = dampAngle(a.heading, Math.atan2(player.x - a.x, player.z - a.z), 2.5, dt); }
+      } else {
+        this.moving = false; this.stuck = 0; if (Math.abs(player.speed) < 0.3) a.heading = dampAngle(a.heading, Math.atan2(player.x - a.x, player.z - a.z), 2.5, dt);
+        const q = sp.resolve(a.x, a.z, 0.28); if (q[0] !== a.x || q[1] !== a.z) { a.x = damp(a.x, q[0], 10, dt); a.z = damp(a.z, q[1], 10, dt); }   // standing inside something: step out of it
+      }
     }
     // Notice the player.
     const pd = Math.hypot(player.x - a.x, player.z - a.z);
@@ -198,6 +214,22 @@ export class Game {
   // ---------- input ----------
   bindInput() {
     window.addEventListener('keydown', (e) => {
+      if(this.mode==='paused'){
+        if(e.ctrlKey || e.metaKey || e.altKey)return;
+        if(!e.repeat && ['Escape','KeyP'].includes(e.code)){e.preventDefault();this.pause(false);return;}
+        if(e.code==='Tab'){
+          const buttons=Array.from($('pause').querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary')).filter(n=>n.getClientRects().length);
+          const index=buttons.indexOf(document.activeElement),next=e.shiftKey?(index<=0?buttons.length-1:index-1):(index+1)%buttons.length;
+          e.preventDefault();buttons[next]?.focus();
+        }
+        return;
+      }
+      if(this.photo?.active){this.photo.key(e);return;}
+      if (this.evidenceTable) { this.evidenceTable.key(e); return; }
+      if(this.cityStudy){this.cityStudy.key(e);return;}
+      if(e.ctrlKey || e.metaKey || e.altKey)return;
+      if(e.code==='F6' && !e.repeat){e.preventDefault();this.photo?.enter();return;}
+      if(e.code==='KeyR' && !e.repeat && this.centerCamera()){e.preventDefault();return;}
       if (this.mode === 'play' && !this.overlayOpen() && MOVE_KEYS.has(e.code)) e.preventDefault();
       this.audio.unlock();
       if (!e.repeat) this.pressed.add(e.code);
@@ -205,10 +237,10 @@ export class Game {
       if (e.code === 'F8' && !e.repeat) { e.preventDefault(); this.showStats = !this.showStats; this.drawStats(); }
       if (e.code === 'F7' && !e.repeat && this.post.ok) { e.preventDefault(); this.post.blur = !this.post.blur; this.ui.hint(this.post.blur ? 'Motion blur on' : 'Motion blur off'); setTimeout(() => this.ui.hint(null), 1500); this.drawStats(); }
       this.keys.add(e.code);
-      if (e.code === 'Escape' || e.code === 'KeyP') { if (this.closeOverlays()) return; if (this.mode === 'play' && !this.ui.waiting) this.pause(true); else if (this.mode === 'paused') this.pause(false); }
-      if (this.mode === 'play' && !this.ui.waiting && !this.ui.pickRes) {
+      if (!e.repeat && (e.code === 'Escape' || e.code === 'KeyP')) { if (this.closeOverlays()) return; if (this.mode === 'play' && !this.ui.waiting) this.pause(true); else if (this.mode === 'paused') this.pause(false); }
+      if (!e.repeat && this.mode === 'play' && !this.ui.waiting && !this.ui.pickRes) {
         if (e.code === 'KeyJ') this.toggle('journal'); if (e.code === 'KeyM') this.toggle('map');
-        if (e.code === 'KeyH' && this.onGuide && !this.busy && !this.overlayOpen()) this.onGuide();
+        if (e.code === 'KeyH' && this.onGuide && (!this.busy || this.cityVision?.exploring) && !this.overlayOpen()) this.onGuide();
       }
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -216,7 +248,7 @@ export class Game {
     c.addEventListener('pointerdown', (e) => { this.audio.unlock(); c.focus({ preventScroll: true }); this.cam.drag = true; this.dragX = e.clientX; this.dragY = e.clientY; try { c.setPointerCapture(e.pointerId); } catch (er) { /* ignore */ } });
     c.addEventListener('pointermove', (e) => {
       if (!this.cam.drag) return;
-      const dx = e.clientX - this.dragX, dy = e.clientY - this.dragY; this.dragX = e.clientX; this.dragY = e.clientY;
+      const dx=e.clientX-this.dragX,dy=e.clientY-this.dragY;this.dragX=e.clientX;this.dragY=e.clientY;
       if (this.cam.mode === 'first') {
         this.cam.fpYaw -= dx * 0.004; this.cam.fpPitch = clamp(this.cam.fpPitch + dy * 0.0035, -1.1, 1.1);
         const L = this.cam.fpLimit; if (L) { this.cam.fpYaw = clamp(this.cam.fpYaw, -L[0], L[0]); this.cam.fpPitch = clamp(this.cam.fpPitch, -L[1], L[1]); }
@@ -236,16 +268,26 @@ export class Game {
     $('btnRestartNo').onclick = () => $('restartAsk').classList.add('hidden');
     $('btnRestartYes').onclick = () => { store.del(CONFIG.saveKey); if (this.onRestart) this.onRestart(); };
   }
-  overlayOpen() { return !$('journal').classList.contains('hidden') || !$('map').classList.contains('hidden') || !$('picker').classList.contains('hidden') || !$('debrief').classList.contains('hidden'); }
-  closeOverlays() { let any = false; for (const id of ['journal', 'map']) if (!$(id).classList.contains('hidden')) { $(id).classList.add('hidden'); any = true; } if (any) this.canvas.focus(); return any; }
+  overlayOpen() { return !!this.evidenceTable || !!this.cityStudy || !$('journal').classList.contains('hidden') || !$('map').classList.contains('hidden') || !$('picker').classList.contains('hidden') || !$('debrief').classList.contains('hidden'); }
+  closeOverlays() { let any = false; for (const id of ['journal', 'map']) if (!$(id).classList.contains('hidden')) { $(id).classList.add('hidden'); any = true; } if (any) {this.keys.clear();this.pressed.clear();this.canvas.focus();} return any; }
   toggle(id) {
+    if(id==='map' && this.cityVision?.active){this.ui.announce('You are walking through an imagined city. Either golden archway returns to the surveyor’s ground.');return;}
     const e = $(id), open = e.classList.contains('hidden');
     this.closeOverlays();
-    if (open) { this.audio.paper(); e.classList.remove('hidden'); if (id === 'journal' && this.renderJournal) this.renderJournal(); if (id === 'map') this.drawMap(); e.querySelector('button').focus(); }
+    if (open) { this.audio.paper(); e.classList.remove('hidden'); if (id === 'journal' && this.renderJournal) this.renderJournal(); if (id === 'map') { this.navigation?.refresh();this.drawMap(); } e.querySelector('button').focus(); }
   }
   pause(on) {
-    if (on && this.mode === 'play') { this.mode = 'paused'; $('pause').classList.remove('hidden'); $('restartAsk').classList.add('hidden'); $('btnResume').focus(); }
-    else if (!on && this.mode === 'paused') { this.mode = 'play'; $('pause').classList.add('hidden'); this.canvas.focus(); this.last = performance.now(); }
+    if (on && this.mode === 'play') {
+      this.volume?.close(false);
+      this.pauseFocus=document.activeElement;this.mode='paused';this.keys.clear();this.pressed.clear();this.cam.drag=false;
+      document.body.classList.add('game-paused');$('pause').classList.remove('hidden');$('restartAsk').classList.add('hidden');$('btnResume').focus();
+    } else if (!on && this.mode === 'paused') {
+      this.mode='play';document.body.classList.remove('game-paused');$('pause').classList.add('hidden');this.keys.clear();this.pressed.clear();
+      const focus=this.pauseFocus;this.pauseFocus=null;
+      if(focus?.isConnected && !focus.disabled && focus.closest('#dialogue,#journal,#map,#picker,[data-modal],.city-study,.evidence-table') && focus.getClientRects().length)focus.focus({preventScroll:true});
+      else this.canvas.focus();
+      this.last=performance.now();
+    }
   }
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
@@ -272,7 +314,7 @@ export class Game {
   async run(fn) {
     this.busy++; this.ui.prompt(null);
     try { await fn(this); } catch (e) { console.error(e); this.lastError = String(e && e.stack || e); }
-    finally { this.busy--; if (!this.busy) { this.ui.closeDialogue(); this.setFocus(null); for (const n of this.npcs.values()) { n.actor.speaking = false; n.actor.mood = n.baseMood; if (n.talkLook) { n.lookTarget = null; n.talkLook = false; } } this.player.speaking = false; this.player.mood = 'neutral'; this.save(); } }
+    finally { this.busy--; if (!this.busy || this.cityVision?.exploring) { this.ui.closeDialogue(); this.setFocus(null); for (const n of this.npcs.values()) { n.actor.speaking = false; n.actor.mood = n.baseMood; if (n.talkLook) { n.lookTarget = null; n.talkLook = false; } } this.player.speaking = false; this.player.mood = 'neutral'; this.save(); } }
   }
   // Say several lines in a row. Each item is [who, text, mood, gesture] or [who, text, options].
   async lines(arr) { for (const l of arr) await this.say(l[0], l[1], l[2] && typeof l[2] === 'object' ? l[2] : { mood: l[2], play: l[3] }); }
@@ -287,6 +329,8 @@ export class Game {
     const p = this.player; this.cam.fYaw = Math.atan2(target.x - p.x, target.z - p.z) + 0.58; this.snapCam = true;
   }
   async say(who, text, opts = {}) {
+    const cityCamera=opts.cityStage && this.cityModel?{mode:this.cam.mode,fixed:this.cam.fixed}:null;
+    if(cityCamera)this.cityModel.reveal(opts.cityStage);
     let name = who, role = opts.role || '';
     for (const n of this.npcs.values()) n.actor.speaking = false; this.player.speaking = false;
     if (who === 'you') { name = 'You'; this.player.speaking = true; this.player.mood = opts.mood || 'neutral'; }
@@ -305,22 +349,29 @@ export class Game {
         for (const m of this.npcs.values()) if (m !== n && !m.hidden && m.space === this.space && m.behavior !== 'ignore' && (!m.lookTarget || m.talkLook) && Math.hypot(m.x - n.x, m.z - n.z) < 9) { m.lookTarget = { x: a.x, y: a.y + 1.5 * (a.spec.height || 1), z: a.z }; m.talkLook = true; }
       }
     }
-    await this.ui.say(name, text, { role, note: opts.note });
+    if(cityCamera){
+      const m=this.cityModel.model.position;
+      this.cam.mode='fixed';this.cam.fixed={pos:new THREE.Vector3(m.x+7,m.y+7,m.z+9),look:new THREE.Vector3(m.x,m.y+1.5,m.z)};
+      this.snapCam=!!this.reduceMotion;
+    }
+    try{await this.ui.say(name, text, { role, note: opts.note });}
+    finally{if(cityCamera){this.cam.mode=cityCamera.mode;this.cam.fixed=cityCamera.fixed;this.snapCam=true;}}
   }
   choose(options, opts) { for (const n of this.npcs.values()) n.actor.speaking = false; this.player.speaking = false; return this.ui.choose(options, opts); }
   giveCard(id) {
     if (this.cards.includes(id)) return false;
     const c = this.cardsById[id]; if (!c) { console.warn('unknown card', id); return false; }
-    this.cards.push(id); this.audio.blip('card'); this.ui.toast(c.title, (/^[0-9]/.test(c.ref) ? 'Republic ' : '') + c.ref, 'New passage in your journal');
+    this.cards.push(id);this.audio.blip('card');this.ui.toast(c.title,(/^[0-9]/.test(c.ref)?'Republic ':'')+c.ref,'New passage in your journal');
     return true;
   }
   objective(text, target) {
-    this.objectiveData = text ? { text, x: target ? target.x : null, z: target ? target.z : null, label: (target && target.label) || '' } : null;
+    this.objectiveData = text ? { text, x: target ? target.x : null, z: target ? target.z : null, label: (target && target.label) || '',space:target?.space || 'world' } : null;
     this.ui.objective(text);
     if (target && target.x != null && (target.space || 'world') === this.space) { this.beam.visible = true; this.beamBase = this.spaces[this.space].ground(target.x, target.z) + 3.4; this.beam.position.set(target.x, this.beamBase, target.z); } else this.beam.visible = false;
   }
   env(name, seconds = 3) { this.envName = name; this.sky.set(name, this.ui.auto ? 0 : seconds); }
   teleport(space, x, z, heading) {
+    this.nearbyInteraction=null;
     this.space = space;
     const p = this.player; p.x = x; p.z = z; this.cam.dYaw = this.cam.dPitch = 0; if (heading != null) { p.heading = heading; this.cam.yaw = heading; }
     p.y = this.spaces[space].ground(x, z); p.vel = 0; p.turnV = 0; p.sync();
@@ -351,6 +402,12 @@ export class Game {
     const ns = dt / CONFIG.step, nr = Math.round(ns);
     if (nr >= 1 && nr <= 4 && Math.abs(ns - nr) < 0.25) dt = nr * CONFIG.step;
     if (this.needResize) { this.needResize = false; this.resize(); }
+    // People's far figures and middle-distance meshes, made ahead of time (actors.js, prepareLevels): 6 ms a frame on the
+    // title screen, and in play one person every quarter second for any left, never many at once.
+    if (this.levelsLeft !== 0) {
+      if (this.mode === 'menu') this.levelsLeft = prepareLevels(6);
+      else if (this.mode === 'play' && (this.levelsT = (this.levelsT || 0) - dt) <= 0) { this.levelsT = 0.25; this.levelsLeft = prepareLevels(0); }
+    }
     if (this.mode === 'play') {
       this.acc += dt * this.timeScale; let n = 0;
       while (this.acc >= CONFIG.step - 1e-6 && n < 5) { try { this.step(CONFIG.step); } catch (e) { if (!this.lastError) console.error(e); this.lastError = String(e && e.stack || e); } this.acc -= CONFIG.step; n++; }
@@ -364,7 +421,7 @@ export class Game {
   step(dt) {
     this.time += dt;
     for (let i = this.waits.length - 1; i >= 0; i--) if (this.time >= this.waits[i].t) { const w = this.waits[i]; this.waits.splice(i, 1); w.res(); }
-    const p = this.player, sp = this.spaces[this.space], free = !this.busy && !this.overlayOpen() && !this.frozen;
+    const p = this.player, sp = this.spaces[this.space], free = (!this.busy || this.cityVision?.exploring) && !this.cityVision?.revealing && !this.overlayOpen() && !this.frozen;
     // movement
     let fwd = 0, turn = 0;
     if (free) {
@@ -423,9 +480,10 @@ export class Game {
         if (!inside) t.inside = false;
       }
       const it = this.nearestInteract();
+      this.nearbyInteraction=it;
       this.ui.prompt(it ? it.label : null);
       if (it && (this.pressed.has('KeyE') || this.pressed.has('Enter'))) { this.pressed.clear(); this.run(it.run); }
-    } else this.ui.prompt(null);
+    } else { this.nearbyInteraction=null;this.ui.prompt(null); }
     this.pressed.clear();
     this.updateCamera(dt);
     this.sea.update(dt);
@@ -438,12 +496,12 @@ export class Game {
       if (n.hidden || n.space !== this.space || !n.talk) continue;
       // The person the story is waiting for is easier to pick out of a group.
       const want = n.id === this.wantTalk, d = Math.hypot(n.actor.x - p.x, n.actor.z - p.z) - (want ? 1.6 : 0);
-      if (d < CONFIG.talkRange - (want ? 0.4 : 0) && d < bd) { bd = d; best = { label: n.label || 'Talk to ' + n.name, run: (g) => n.talk(g, n) }; }
+      if (d < CONFIG.talkRange - (want ? 0.4 : 0) && d < bd) { bd = d; best = { label: n.label || 'Talk to ' + n.name, x:n.x,z:n.z,npc:n,run: (g) => n.talk(g, n) }; }
     }
     for (const s of this.spots) {
       if ((s.space || 'world') !== this.space || (s.when && !s.when(this))) continue;
       const d = Math.hypot(s.x - p.x, s.z - p.z);
-      if (d < (s.r || 2.4) && d - 0.5 < bd) { bd = d - 0.5; best = { label: typeof s.label === 'function' ? s.label(this) : s.label, run: s.run }; }
+      if (d < (s.r || 2.4) && d - 0.5 < bd) { bd = d - 0.5; best = { label: typeof s.label === 'function' ? s.label(this) : s.label, x:s.x,z:s.z,run: s.run }; }
     }
     return best;
   }
@@ -454,7 +512,7 @@ export class Game {
     for (const c of this.chatter) {
       if ((c.space || 'world') !== this.space || (c.when && !c.when(this))) continue;
       const d = Math.hypot(p.x - c.x, p.z - c.z);
-      if (d > (c.r || 13) || this.busy) { c.timer = Math.min(c.timer || 0, 1); continue; }
+      if (d > (c.r || 13) || (this.busy && !this.cityVision?.exploring)) { c.timer = Math.min(c.timer || 0, 1); continue; }
       c.timer = (c.timer || 0) - dt;
       if (c.timer <= 0) {
         c.i = c.i || 0; const line = c.lines[c.i % c.lines.length]; c.i++;
@@ -470,7 +528,15 @@ export class Game {
   }
 
   // ---------- camera ----------
+  centerCamera() {
+    if(this.mode!=='play' || (this.busy && !this.cityVision?.exploring) || this.frozen || this.overlayOpen() || this.cam.mode!=='follow')return false;
+    const c=this.cam;
+    if(this.reduceMotion){c.yaw=this.player.heading;c.pitch=CONFIG.camPitch;c.dYaw=0;c.dPitch=0;}
+    else {c.dYaw=wrapPi(this.player.heading-c.yaw);c.dPitch=CONFIG.camPitch-c.pitch;}
+    c.want=CONFIG.camDist;c.drag=false;this.keys.clear();this.pressed.clear();this.ui.announce('Camera centered behind you.');return true;
+  }
   updateCamera(dt) {
+    if(this.cityStudy){this.cityStudy.updateCamera(dt);return;}
     const c = this.cam, p = this.player, sp = this.spaces[this.space];
     if (c.mode === 'first') {
       p.group.visible = false;
@@ -503,25 +569,27 @@ export class Game {
       yaw = Math.atan2(fx - p.x, fz - p.z) + 0.58; pitch = 0.1; dist = clamp(d * 0.8 + 1.5, 2.5, 7);
       c.fYaw = c.fYaw == null ? c.yaw : dampAngle(c.fYaw, yaw, 3, dt); yaw = c.fYaw;
     } else {
-      const moving = Math.abs(p.speed) > 0.3 || this.keys.has('KeyA') || this.keys.has('KeyD') || this.keys.has('ArrowLeft') || this.keys.has('ArrowRight');
+      const moving = !this.photo?.active && (Math.abs(p.speed) > 0.3 || this.keys.has('KeyA') || this.keys.has('KeyD') || this.keys.has('ArrowLeft') || this.keys.has('ArrowRight'));
       if (c.fYaw != null) { c.yaw = c.fYaw; c.fYaw = null; }
-      if (moving && !c.drag && !this.busy) c.yaw = dampAngle(c.yaw, p.heading, 3.2, dt);
+      if (moving && !c.drag && (!this.busy || this.cityVision?.exploring)) c.yaw = dampAngle(c.yaw, p.heading, 3.2, dt);
       yaw = c.yaw;
       // Look a little ahead of the player in the direction of travel (up to 1.2 m at a run), with the camera moved
       // back by the same amount so the player stays the same size on screen.
-      c.ahead = damp(c.ahead || 0, clamp((p.vel || 0) * 0.2, -0.3, 1.2), 2.2, dt);
+      if(!this.photo?.active)c.ahead = this.reduceMotion?0:damp(c.ahead || 0, clamp((p.vel || 0) * 0.2, -0.3, 1.2), 2.2, dt);
       tx += Math.sin(p.heading) * c.ahead; tz += Math.cos(p.heading) * c.ahead; dist += Math.max(0, c.ahead) * 0.9;
     }
     // A slightly wider view at a run, for a sense of speed.
-    const runK = this.focus ? 0 : clamp((Math.abs(p.vel || 0) - CONFIG.walk) / (CONFIG.run - CONFIG.walk), 0, 1);
-    c.fov = damp(c.fov || 58, 58 + 4 * runK, 3, dt);
-    if (Math.abs(this.camera.fov - c.fov) > 0.02) { this.camera.fov = c.fov; this.camera.updateProjectionMatrix(); }
+    const runK = this.focus || this.reduceMotion ? 0 : clamp((Math.abs(p.vel || 0) - CONFIG.walk) / (CONFIG.run - CONFIG.walk), 0, 1);
+    if(!this.photo?.active){
+      c.fov = damp(c.fov || 58, 58 + 4 * runK, 3, dt);
+      if (Math.abs(this.camera.fov - c.fov) > 0.02) { this.camera.fov = c.fov; this.camera.updateProjectionMatrix(); }
+    }
     const k = this.snapCam ? 1 : 1 - Math.exp(-7 * dt);
     c.t.x = lerp(c.t.x, tx, k); c.t.y = lerp(c.t.y, ty, k); c.t.z = lerp(c.t.z, tz, k);
     // Pull the camera in when something solid is between it and its subject.
     const cp = Math.cos(pitch), dx = -Math.sin(yaw) * cp, dy = Math.sin(pitch), dz = -Math.cos(yaw) * cp;
     let ok = dist;
-    const room = this.space === 'world' ? this.world.indoor(p.x, p.z) : null;   // under a roof: the camera may not rise through it
+    const room = sp.indoor ? sp.indoor(p.x,p.z) : this.space === 'world' ? this.world.indoor(p.x, p.z) : null;   // under a roof: the camera may not rise through it
     this.sky.indoor = damp(this.sky.indoor || 0, room ? 1 : 0, 3, dt);
     this.post.unseen = damp(this.post.unseen || 0, this.invisible ? 1 : 0, 6, dt);
     if (this.sky.flash) this.sky.flash = this.sky.flash < 0.03 ? 0 : damp(this.sky.flash, 0, 11, dt);   // lightning fades in about a quarter of a second   // the ring: the world loses color while nobody can see you
@@ -535,12 +603,13 @@ export class Game {
     this.camera.position.set(c.t.x + dx * c.cur, c.t.y + dy * c.cur, c.t.z + dz * c.cur);
     // Backed against a wall indoors, the camera ends up inside the player's head: stop drawing the player then.
     if (room) p.group.visible = c.cur > 0.95;
-    if (this.shake > 0) { if (!this.reduceMotion) { this.camera.position.x += (Math.random() - 0.5) * this.shake * 0.5; this.camera.position.y += (Math.random() - 0.5) * this.shake * 0.35; } this.shake = Math.max(0, this.shake - dt * 0.55); }
+    if (this.shake > 0 && !this.photo?.active) { if (!this.reduceMotion) { this.camera.position.x += (Math.random() - 0.5) * this.shake * 0.5; this.camera.position.y += (Math.random() - 0.5) * this.shake * 0.35; } this.shake = Math.max(0, this.shake - dt * 0.55); }
     this.camera.lookAt(c.t.x, c.t.y + 0.15, c.t.z);
     this.snapCam = false;
   }
 
   render(dt) {
+    if(this.photo?.active)this.photo.update(dt);
     const p = this.player;
     if (this.mode === 'menu' || this.mode === 'loading') {
       this.menuT = (this.menuT || 0) + dt * 0.035;
@@ -563,7 +632,7 @@ export class Game {
     this.surface.update(this.sky, this.camera, dt);
     this.updateFlames(dt);
     for (const present of this.presenters) present(dt);   // visual accents that follow the sky (harbor-detail.js)
-    if (this.music) { const p0 = this.player, where = this.space === 'cave' ? 'cave' : this.space === 'lydia' || this.envName === 'lydia' ? 'lydia' : p0.z < -84 ? 'fields' : 'town'; this.music.update(this.mode === 'play' || this.mode === 'paused' ? where : 'town', this.sky.cur.stars > 0.5, this.busy ? 1 : 0); }
+    if (this.music) { const p0 = this.player, where = this.space === 'cave' ? 'cave' : this.space === 'lydia' || this.envName === 'lydia' ? 'lydia' : p0.z < -84 ? 'fields' : 'town'; this.music.update(['play','paused','photo'].includes(this.mode) ? where : 'town', this.sky.cur.stars > 0.5, this.busy ? 1 : 0); }
     if (this.objectiveData && this.objectiveData.x != null && this.mode === 'play') {
       const o = this.objectiveData, dx = o.x - p.x, dz = o.z - p.z, d = Math.hypot(dx, dz);
       this.beam.material.opacity = 0.95 * clamp((d - 3) / 6, 0, 1); this.beam.rotation.y += dt * 1.5; this.beam.position.y = (this.beamBase || 0) + Math.sin(this.time * 2) * 0.18; this.beam.scale.setScalar(clamp(d / 30, 1, 5));
@@ -572,12 +641,17 @@ export class Game {
         this.ui.compass(-wrapPi(Math.atan2(dx, dz) - camYaw), d, o.label || 'This way');
       } else this.ui.compass(null);
     } else this.ui.compass(null);
+    const marker=this.navigation?.target;
+    if(marker && marker.space===this.space && this.mode==='play'){
+      this.camera.getWorldDirection(_v);const yaw=Math.atan2(_v.x,_v.z);
+      this.ui.compass(-wrapPi(Math.atan2(marker.x-p.x,marker.z-p.z)-yaw),Math.hypot(marker.x-p.x,marker.z-p.z),'Marker: '+marker.label);
+    }
     // bubbles
     const w = window.innerWidth, h = window.innerHeight;
     for (const id of Array.from(this.ui.bubbles.keys())) {
       const n = this.npcs.get(id); if (!n) continue;
       n.actor.headWorld(_v2); _v2.y += 0.25; const dist = _v2.distanceTo(this.camera.position); _v2.project(this.camera);
-      this.ui.placeBubble(id, (_v2.x * 0.5 + 0.5) * w, (-_v2.y * 0.5 + 0.5) * h, _v2.z < 1 && dist < 26 && !n.hidden && n.space === this.space && !this.busy);
+      this.ui.placeBubble(id, (_v2.x * 0.5 + 0.5) * w, (-_v2.y * 0.5 + 0.5) * h, _v2.z < 1 && dist < 26 && !n.hidden && n.space === this.space && (!this.busy || this.cityVision?.exploring));
     }
     try { if (this.post.enabled) this.post.render(this.scene, this.camera); else { this.renderer.setRenderTarget(null); this.renderer.render(this.scene, this.camera); } } catch (e) { if (!this.lastError) console.error(e); this.lastError = String(e && e.stack || e); }
   }
@@ -680,6 +754,18 @@ export class Game {
     if (over && (this.rung || 0) < RUNGS.length - 1) this.setRung((this.rung || 0) + 1);
     else if (room && this.rung > 0 && !this.rungHold) this.setRung(this.rung - 1);
   }
+  // Draw the town once from each of a few places, behind the loading screen (2026-11-23). The first frame of the town
+  // after loading took about 0.6 s on Intel UHD 620, mostly its models and pictures going to the graphics chip; now
+  // that happens here, while the loading bar shows.
+  warmUp(views) {
+    const cam = this.camera, mode = this.mode, pos = cam.position.clone(), q = cam.quaternion.clone();
+    this.mode = 'shot';
+    for (const [x, z, lx, lz] of views) {
+      cam.position.set(x, this.world.standY(x, z) + 2.4, z); cam.lookAt(lx, this.world.standY(lx, lz) + 0.5, lz); cam.updateMatrixWorld();
+      this.cullT = 0; this.render(0);
+    }
+    cam.position.copy(pos); cam.quaternion.copy(q); cam.updateMatrixWorld(); this.mode = mode; this.cullT = 0;
+  }
   setRung(i) {
     const P = this.post, R = RUNGS[i], sun = this.sky.sun;
     // After a step down, wait before stepping up again, so nothing switches on and off every second; much longer if the
@@ -693,7 +779,7 @@ export class Game {
     } else { this.upAt = this.time; this.upRung = i; }
     this.rung = i;
     try { localStorage.setItem(RUNG_KEY, String(i)); } catch (e) { /* no storage: start at the top next time */ }
-    P.setSamples(R.samples); P.scale = R.scale; P.glow = R.glow;
+    P.setSamples(R.samples); P.scale = R.scale; P.glow = R.glow; P.lite = !!R.lite;
     if (sun.shadow.mapSize.x !== R.shadow) { sun.shadow.mapSize.set(R.shadow, R.shadow); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
   }
 
@@ -712,15 +798,27 @@ export class Game {
       c.fillStyle = y < 1.25 ? '#e1d4ad' : `rgb(${Math.round(196 - v * 70)},${Math.round(200 - v * 60)},${Math.round(150 - v * 60)})`;
       c.fillRect(X(x), Z(z), step * s + 1, step * s + 1);
     }
-    c.fillStyle = '#7a5f48';
+    // Draw the same paths used to build the world, so bearings can be followed
+    // along actual streets rather than guessed across buildings.
+    c.save();c.beginPath();c.rect(X(view.x0),Z(view.z0),(view.x1-view.x0)*s,(view.z1-view.z0)*s);c.clip();c.lineJoin='round';c.lineCap='round';
+    for(const route of wd.mapPaths || []){
+      c.beginPath();route.path.forEach(([x,z],i)=>i?c.lineTo(X(x),Z(z)):c.moveTo(X(x),Z(z)));
+      c.strokeStyle='#a69a73';c.lineWidth=Math.max(2,route.width*s+2);c.stroke();
+      c.strokeStyle='#e3d6af';c.lineWidth=Math.max(1,route.width*s);c.stroke();
+    }
+    c.restore();c.fillStyle = '#7a5f48';
     for (const k of wd.colliders) {
       if (k.t !== 1 || k.h < 2.4 || k.hx * k.hz < 3) continue;
       c.save(); c.translate(X(k.x), Z(k.z)); c.rotate(-Math.atan2(k.sin, k.cos)); c.fillRect(-k.hx * s, -k.hz * s, k.hx * 2 * s, k.hz * 2 * s); c.restore();
     }
     c.font = '15px Palatino Linotype, Georgia, serif'; c.fillStyle = '#2a2118'; c.textAlign = 'center';
-    for (const m of (this.mapLabels || [])) if (!!m.lydia === lyd) c.fillText(m.text, X(m.x), Z(m.z));
+    for (const m of (this.mapLabels || [])) if (!!m.lydia === lyd) {
+      c.textAlign=m.text==='House of Cephalus'?'right':m.text==='Shield workshop'?'left':'center';
+      c.save();c.strokeStyle='#eee5c9';c.lineWidth=3;c.lineJoin='round';c.strokeText(m.text,X(m.x),Z(m.z));c.fillText(m.text,X(m.x),Z(m.z));c.restore();
+    }
     if (this.objectiveData && this.objectiveData.x != null) { c.strokeStyle = '#a8452e'; c.lineWidth = 3; c.beginPath(); c.arc(X(this.objectiveData.x), Z(this.objectiveData.z), 11, 0, 7); c.stroke(); }
     const p = this.player; c.save(); c.translate(X(p.x), Z(p.z)); c.rotate(-p.heading); c.fillStyle = '#a8452e'; c.beginPath(); c.moveTo(0, 12); c.lineTo(7, -8); c.lineTo(0, -3); c.lineTo(-7, -8); c.closePath(); c.fill(); c.restore();
+    this.navigation?.draw(c,{X,Z,s,view,ox:(W-(view.x1-view.x0)*s)/2,oz:(H-(view.z1-view.z0)*s)/2});
   }
 
   // ---------- test seam ----------

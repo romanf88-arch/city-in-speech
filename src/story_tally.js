@@ -21,14 +21,17 @@
 const PEB = 9;   // most pebbles in a column
 
 // The counting board. Resolves with { amount } when the player pays, or { sent: true } when he sends the man away.
-function board(g, page) {
+export function board(g, page) {
   if (g.ui.auto) { const r = g.ui.auto('tally', page); return Promise.resolve(r && typeof r === 'object' ? r : { amount: page.owed }); }
   return new Promise((res) => {
     const n = [0, 0, 0], names = ['hundreds', 'tens', 'ones'];
     const wrap = document.createElement('div');
+    wrap.dataset.modal='counting-board';wrap.setAttribute('role','dialog');wrap.setAttribute('aria-modal','true');wrap.setAttribute('aria-label','Set out the payment');
     wrap.style.cssText = 'position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(10,8,6,.62);font-family:Palatino Linotype,Georgia,serif';
     const panel = document.createElement('div');
     panel.style.cssText = 'display:flex;flex-wrap:wrap;gap:18px;max-width:min(94vw,860px);background:#efe6d2;border-radius:10px;box-shadow:0 12px 44px rgba(0,0,0,.6);padding:20px 22px;color:#2a2118';
+    panel.style.maxHeight='calc(100dvh - 32px)';panel.style.overflow='auto';panel.style.boxSizing='border-box';
+    const heading=document.createElement('h2');heading.textContent='Set out the payment';heading.style.cssText='flex-basis:100%;font-size:25px;font-weight:400;margin:0';panel.append(heading);
     // the wax tablet with this man's lines
     const tab = document.createElement('div');
     tab.style.cssText = 'flex:1 1 300px;background:#3a2c20;border:8px solid #6b4a32;border-radius:6px;padding:14px 16px;color:#eadfc4;font-size:17px;line-height:1.5';
@@ -40,38 +43,55 @@ function board(g, page) {
     const side = document.createElement('div'); side.style.cssText = 'flex:1 1 330px;display:flex;flex-direction:column;gap:10px';
     const cols = document.createElement('div'); cols.style.cssText = 'display:flex;gap:10px';
     const total = document.createElement('div'); total.style.cssText = 'font-size:18px;text-align:center';
-    const stacks = [];
+    total.setAttribute('role','status');total.setAttribute('aria-live','polite');total.setAttribute('aria-atomic','true');
+    const stacks = [],digits=[],minus=[],plus=[];
     const draw = () => {
-      stacks.forEach((s, i) => { s.innerHTML = ''; for (let k = 0; k < n[i]; k++) { const p = document.createElement('span'); p.style.cssText = 'display:inline-block;width:17px;height:17px;border-radius:50%;background:#3b3835;margin:2px;box-shadow:inset -2px -2px 3px rgba(255,255,255,.18)'; s.append(p); } });
+      stacks.forEach((s, i) => { s.innerHTML = '';digits[i].value=String(n[i]);minus[i].disabled=n[i]===0;plus[i].disabled=n[i]===PEB;for (let k = 0; k < n[i]; k++) { const p = document.createElement('span'); p.style.cssText = 'display:inline-block;width:17px;height:14px;border-radius:45% 55% 48% 52%;background:radial-gradient(circle at 32% 28%,#928c7f,#47433a 70%);margin:2px;box-shadow:1px 2px 2px #594b3655';p.style.transform='rotate('+k*47+'deg)';p.setAttribute('aria-hidden','true');s.append(p); } });
       total.textContent = 'On the board: ' + (n[0] * 100 + n[1] * 10 + n[2]) + ' drachmas';
+      pay.disabled=n.every(value=>value===0);clear.disabled=pay.disabled;
     };
     const change = (i, d) => { const v = n[i] + d; if (v < 0 || v > PEB) return; n[i] = v; g.audio.blip('pebble'); draw(); };
     names.forEach((nm, i) => {
       const col = document.createElement('div'); col.style.cssText = 'flex:1;background:#d9c9a8;border:1px solid #b8a37c;border-radius:6px;padding:8px 6px;text-align:center;cursor:pointer;user-select:none';
+      col.style.background='linear-gradient(100deg,#cbb78e,#e7d6b0 50%,#c9b58b)';
       const lab = document.createElement('div'); lab.textContent = nm; lab.style.cssText = 'font:600 12px/1.4 system-ui,sans-serif;letter-spacing:.07em;text-transform:uppercase;color:#6b5a3e';
       const st = document.createElement('div'); st.style.cssText = 'min-height:70px;padding:6px 0'; stacks.push(st);
+      const digit=document.createElement('output');digit.style.cssText='display:block;font-size:25px;margin-top:6px';digit.setAttribute('aria-label',nm+' digit');digits.push(digit);
       const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:6px;justify-content:center';
       const mk = (txt, d, label) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.setAttribute('aria-label', label); b.style.cssText = 'font:600 18px/1 system-ui,sans-serif;width:42px;height:34px;border-radius:6px;border:1px solid #8a7550;background:#f6efdf;cursor:pointer'; b.onclick = (e) => { e.stopPropagation(); change(i, d); }; return b; };
-      row.append(mk('−', -1, 'Take a pebble from the ' + nm), mk('+', 1, 'Add a pebble to the ' + nm));
+      const take=mk('−', -1, 'Take a pebble from the ' + nm),add=mk('+', 1, 'Add a pebble to the ' + nm);minus.push(take);plus.push(add);row.append(take,add);
       col.onclick = () => change(i, 1);
-      col.append(lab, st, row); cols.append(col);
+      col.append(lab,digit,st,row); cols.append(col);
     });
     const btns = document.createElement('div'); btns.style.cssText = 'display:flex;gap:10px;justify-content:center;flex-wrap:wrap';
     const big = (txt) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.style.cssText = 'font:600 16px/1 system-ui,sans-serif;padding:11px 18px;border-radius:7px;border:1px solid #6b4a32;background:#6b4a32;color:#fff6e0;cursor:pointer'; return b; };
-    const done = (r) => { window.removeEventListener('keydown', onKey, true); wrap.remove(); res(r); };
+    let closed=false;
+    const done = (r) => { if(closed)return;closed=true;window.removeEventListener('keydown', onKey, true);wrap.remove();g.keys.clear();g.pressed.clear();g.canvas.focus();res(r); };
     const pay = big('Pay him this'); pay.onclick = () => done({ amount: n[0] * 100 + n[1] * 10 + n[2] }); btns.append(pay);
+    const clear=big('Clear board');clear.style.background='#84704e';clear.onclick=()=>{n.fill(0);draw();plus[2].focus();};btns.append(clear);
     if (page.canSend) { const s = big('Send him away'); s.style.background = '#8a3b2e'; s.onclick = () => done({ sent: true }); btns.append(s); }
     const tip = document.createElement('div'); tip.style.cssText = 'font:13px/1.45 system-ui,sans-serif;color:#5a4a34;text-align:center';
-    tip.textContent = 'Click a column to add a pebble, or use + and −. Keys: 1, 2, 3 add a pebble; Shift with 1, 2, 3 takes one away; Enter pays.';
+    tip.textContent = 'Each pebble is worth 100, 10 or 1 drachma in its column. Click a column or use + and −. Keys 1, 2, 3 add; Shift removes. P pays; Delete clears; Esc pauses. Tab browses buttons; Enter activates the focused button.';
     side.append(cols, total, btns, tip);
     panel.append(tab, side); wrap.append(panel); document.body.append(wrap);
     function onKey(e) {
-      const i = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
+      if(g.mode==='paused')return;
+      if(e.ctrlKey || e.metaKey || e.altKey)return;
+      e.stopImmediatePropagation();
+      if(e.repeat){e.preventDefault();return;}
+      if(e.code==='Tab'){
+        const buttons=Array.from(wrap.querySelectorAll('button:not(:disabled)')),index=buttons.indexOf(document.activeElement);
+        const next=e.shiftKey?(index<=0?buttons.length-1:index-1):(index+1)%buttons.length;e.preventDefault();buttons[next].focus();return;
+      }
+      const match=/^(?:Digit|Numpad)([123])$/.exec(e.code),i=match?Number(match[1])-1:-1;
       if (i >= 0) { e.preventDefault(); e.stopPropagation(); change(i, e.shiftKey ? -1 : 1); }
-      else if (e.code === 'Enter') { e.preventDefault(); e.stopPropagation(); done({ amount: n[0] * 100 + n[1] * 10 + n[2] }); }
+      else if(e.code==='Delete'){e.preventDefault();if(!clear.disabled)clear.click();}
+      else if(e.code==='KeyP'){e.preventDefault();if(!pay.disabled)pay.click();}
+      else if(e.code==='Enter'){e.preventDefault();if(wrap.contains(document.activeElement) && document.activeElement.tagName==='BUTTON')document.activeElement.click();}
+      else if(e.code==='Escape'){e.preventDefault();g.pause(true);}
     }
     window.addEventListener('keydown', onKey, true);
-    draw(); pay.focus();
+    draw();plus[2].focus();
   });
 }
 

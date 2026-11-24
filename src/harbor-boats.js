@@ -118,6 +118,9 @@ export function setupHarborBoats(g) {
     return [S.x, S.z];
   } });
 
+  // Put each boat in its place now, not at the first step: until then a boat sits where the kit made it, at the
+  // middle of the town (0, 0), under the market square.
+  for (const B of boats) { const [x, z] = B.step(0); B.b.o.position.set(x, B.b.y, z); }
   g.tickers.push((dt) => {
     const t = g.time, p = g.player, near = g.space === 'world';
     splash.update(dt);

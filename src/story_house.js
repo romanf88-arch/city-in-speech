@@ -10,14 +10,17 @@
 const WEFT = [['cream', '#e6dcc0'], ['red', '#a33b2e'], ['blue', '#2f5f7a']];
 
 // Weave a strip of cloth at the loom: the player picks a thread color for each row. Resolves with the rows woven.
-function weave(g, rows = 10) {
+export function weave(g, rows = 10) {
   if (g.ui.auto) return Promise.resolve(rows);
   return new Promise((res) => {
     const W = 560, H = 380, wrap = document.createElement('div');
+    wrap.className='craft-activity';
+    wrap.dataset.modal='weaving';wrap.setAttribute('role','dialog');wrap.setAttribute('aria-modal','true');wrap.setAttribute('aria-label','Weave a strip of cloth');
     wrap.style.cssText = 'position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,8,6,.6)';
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    cv.tabIndex=0;cv.setAttribute('aria-label','Loom. Use 1, 2 or 3 to choose thread.');
     cv.style.cssText = 'max-width:92vw;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,.6);cursor:pointer';
-    const tip = document.createElement('div');
+    const tip = document.createElement('div');tip.setAttribute('role','status');tip.setAttribute('aria-live','polite');
     tip.style.cssText = 'margin-top:14px;color:#f4ecdc;font:17px/1.45 Palatino Linotype,Georgia,serif;text-align:center;max-width:min(92vw,620px)';
     wrap.append(cv, tip); document.body.append(wrap);
     const c = cv.getContext('2d'), x0 = 70, x1 = W - 70, top = 56, rowH = 22, n = 24, picks = [];
@@ -39,17 +42,23 @@ function weave(g, rows = 10) {
       tip.textContent = picks.length < rows ? `Row ${picks.length + 1} of ${rows}. Press 1, 2 or 3 to choose the thread, or click a color.` : 'The strip is finished.';
     };
     let done = false;
-    const finish = () => { if (done) return; done = true; window.removeEventListener('keydown', onKey, true); setTimeout(() => { wrap.remove(); res(picks.length); }, 900); };
-    const pick = (i) => { if (done) return; picks.push(i); g.audio.tone(380 + i * 70, 0.07, 'triangle', 0.05); draw(); if (picks.length >= rows) finish(); };
+    const finish = () => { if (done) return; done = true;threadButtons.forEach(b=>b.disabled=true); window.removeEventListener('keydown', onKey, true); setTimeout(() => { wrap.remove();g.keys.clear();g.pressed.clear();if(g.mode==='play')g.canvas.focus();res(picks.length); }, 900); };
+    const pick = (i) => { if (done || g.mode==='paused') return; picks.push(i); g.audio.tone(380 + i * 70, 0.07, 'triangle', 0.05); draw(); if (picks.length >= rows) finish(); };
+    const controls=document.createElement('div');controls.className='craft-actions';
+    const threadButtons=WEFT.map(([name,color],i)=>{const b=document.createElement('button');b.className='btn';b.textContent=(i+1)+'. '+name;b.style.borderLeft='8px solid '+color;b.onclick=()=>pick(i);controls.append(b);return b;});
+    const leave=document.createElement('button');leave.className='btn ghost';leave.textContent='Leave the loom';leave.onclick=()=>{if(g.mode!=='paused')finish();};controls.append(leave);wrap.append(controls);
     const onKey = (e) => {
+      if(g.mode==='paused' || e.ctrlKey || e.metaKey || e.altKey)return;
+      if(e.code==='Tab'){e.preventDefault();e.stopImmediatePropagation();const all=[cv,...threadButtons,leave].filter(b=>!b.disabled),i=all.indexOf(document.activeElement);all[e.shiftKey?(i<=0?all.length-1:i-1):(i+1)%all.length].focus();return;}
+      if(e.repeat){e.preventDefault();e.stopImmediatePropagation();return;}
       const i = ['Digit1', 'Digit2', 'Digit3', 'Numpad1', 'Numpad2', 'Numpad3'].indexOf(e.code);
       if (i >= 0) { e.preventDefault(); e.stopPropagation(); pick(i % 3); }
-      else if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); e.stopPropagation(); pick(picks.length ? picks[picks.length - 1] : 0); }
+      else if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); e.stopPropagation();if(controls.contains(document.activeElement))document.activeElement.click();else pick(picks.length ? picks[picks.length - 1] : 0); }
       else if (e.code === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(); }
     };
-    cv.addEventListener('pointerdown', (e) => { const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height; if (y > H - 40) { const i = Math.floor((x - (W / 2 - 150)) / 110); if (i >= 0 && i < 3) pick(i); } });
+    cv.addEventListener('pointerdown', (e) => {if(g.mode==='paused')return;const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height; if (y > H - 40) { const i = Math.floor((x - (W / 2 - 150)) / 110); if (i >= 0 && i < 3) pick(i); } });
     window.addEventListener('keydown', onKey, true);
-    draw();
+    draw();cv.focus();
   });
 }
 

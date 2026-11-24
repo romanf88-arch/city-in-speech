@@ -162,6 +162,7 @@ export class World {
     this.paved = new Map();                  // height of paving and streets by half-meter cell (see standY)
     this.groundKinds = new Map();            // same cells, for footsteps and dust
     this.colliders = [];
+    this.mapPaths = [];
     this.hash = new Map();
     this.chunks = [];
     this.rng = mulberry32(20261111);
@@ -328,7 +329,13 @@ export class World {
 
   walkable(x, z) {
     if (x < BOUNDS.x0 + 8 || x > BOUNDS.x1 - 8 || z < BOUNDS.z0 + 8 || z > BOUNDS.z1 - 6) return false;
-    return this.groundY(x, z) > 0.18;
+    const y = this.groundY(x, z);
+    // Out of the water (2026-11-23; Roman: "the character can kind of fall into the water"). Where the sea is (from
+    // z 20 south) the ground must be above the highest wave crests, 0.59 m, not just above 0.18 m as before: on the
+    // low beaches outside the walls the waves washed over a person's legs. And the pond below the cave, which nothing
+    // kept anyone out of (it is 0.7 m deep in the middle), now stops a person at its edge.
+    if (Math.hypot(x - PLACES.pond[0], z - PLACES.pond[1]) < 10 && y < POND_LEVEL + 0.12) return false;
+    return z < 20 ? y > 0.18 : y > 0.62;
   }
 
   // ----- terrain mesh -----
@@ -435,6 +442,7 @@ export class World {
 
   // A strip laid on the ground along a path.
   ribbon(path, width, hexA, hexB, lift = 0.06) {
+    this.mapPaths.push({path:path.map(p=>[p[0],p[1]]),width});
     const pos = [], col = [], extra = { edge: [], half: [] };
     this._strip(pos, col, extra, path, width, hexA, hexB, lift);
     return this._flatMesh(pos, col, true, 'street', extra);

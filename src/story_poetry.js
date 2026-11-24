@@ -2,29 +2,36 @@
 // Terpes also recites the whole Iliad, in Samuel Butler's translation of 1898, to anyone who stands near him.
 import { runDispute } from './dispute.js';
 import { HOMES } from './story.js';
+import { RhythmCue } from './rhythm-cue.js';
 
 // Chant one line with the reciter. The player keeps the beat with the Space bar. Returns how many beats were kept.
-function chant(g, text, beats = 4, gap = 0.66) {
+export function chant(g, text, beats = 4, gap = 0.66) {
   if (g.ui.auto) return Promise.resolve(beats);
   return new Promise((res) => {
-    const start = performance.now() + 900, times = []; for (let i = 0; i < beats; i++) times.push(start + i * gap * 1000);
+    const start = g.time * 1000 + 900, times = []; for (let i = 0; i < beats; i++) times.push(start + i * gap * 1000);
     const hit = new Array(beats).fill(false); let shown = -1;
-    const draw = (k) => g.ui.story(text + '\n' + times.map((_, i) => (hit[i] ? '●' : i <= k ? '○' : '·')).join('  '));
+    let cue;
+    const draw = () => {g.ui.story(text);cue?.update(g.time*1000,hit);};
     draw(-1);
     const onKey = (e) => {
+      if(g.mode==='paused' || e.ctrlKey || e.metaKey || e.altKey)return;
+      if(e.repeat){if(['Space','Enter'].includes(e.code))e.preventDefault();return;}
+      if(e.code==='Tab'){e.preventDefault();e.stopImmediatePropagation();cue.button.focus();return;}
       if (e.code !== 'Space' && e.type !== 'pointerdown') return; if (e.preventDefault) e.preventDefault();
-      const now = performance.now(); let best = -1, bd = 230;
+      const now = g.time * 1000; let best = -1, bd = 230;
       times.forEach((t, i) => { const d = Math.abs(now - t); if (d < bd && !hit[i]) { bd = d; best = i; } });
       if (best >= 0) { hit[best] = true; g.audio.tone(660, 0.08, 'triangle', 0.06); draw(shown); }
     };
+    cue=new RhythmCue(g,{title:'Keep the reciter’s beat',action:'Keep the beat',beats,start,gap:gap*1000,window:230,tap:()=>onKey({type:'pointerdown'})});cue.update(g.time*1000,hit);
     window.addEventListener('keydown', onKey, true); g.canvas.addEventListener('pointerdown', onKey);
     const tick = () => {
-      const now = performance.now();
+      if(g.mode !== 'play')return;
+      const now = g.time * 1000;
+      cue.update(now,hit);
       times.forEach((t, i) => { if (i > shown && now >= t) { shown = i; g.audio.pluck([196, 220, 262, 220][i % 4], 0.7); draw(shown); } });
-      if (now > times[beats - 1] + 600) { window.removeEventListener('keydown', onKey, true); g.canvas.removeEventListener('pointerdown', onKey); g.ui.story(null); res(hit.filter(Boolean).length); }
-      else requestAnimationFrame(tick);
+      if (now > times[beats - 1] + 600) { window.removeEventListener('keydown', onKey, true); g.canvas.removeEventListener('pointerdown', onKey); g.ui.story(null);cue.close();g.tickers=g.tickers.filter(fn=>fn!==tick); res(hit.filter(Boolean).length); }
     };
-    requestAnimationFrame(tick);
+    g.tickers.push(tick);
   });
 }
 

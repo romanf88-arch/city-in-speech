@@ -30,18 +30,23 @@ const STROKES = {
 
 // Go over faint letters on a wax tablet with the mouse. Resolves with the share of the letters covered (0 to 1).
 // The Space bar or Enter finishes it for the player, so nobody is stuck here.
-function trace(g, word, helper) {
+export function trace(g, word, helper) {
   if (g.ui.auto) return Promise.resolve(1);
   return new Promise((res) => {
     const W = 680, H = 300, wrap = document.createElement('div');
+    wrap.className='craft-activity';
+    wrap.dataset.modal='tracing';wrap.setAttribute('role','dialog');wrap.setAttribute('aria-modal','true');wrap.setAttribute('aria-label','Trace letters on the wax tablet');
     wrap.style.cssText = 'position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,8,6,.6)';
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    cv.tabIndex=0;cv.setAttribute('aria-label','Wax tablet. Trace the letters, or use Space for help.');
     cv.style.cssText = 'max-width:92vw;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,.6);cursor:crosshair;touch-action:none';
     const tip = document.createElement('div');
     tip.textContent = 'Hold the mouse button down and go over the faint letters. ' + (helper ? 'Press the Space bar and Theano will guide your hand.' : 'Press the Space bar to finish them without the mouse.');
     tip.style.cssText = 'margin-top:14px;color:#f4ecdc;font:17px/1.45 Palatino Linotype,Georgia,serif;text-align:center;max-width:min(92vw,640px)';
-    wrap.append(cv, tip); document.body.append(wrap);
-    const c = cv.getContext('2d'), n = word.length, lw = 96, lh = 150, gapX = (W - 80 - n * lw) / (n - 1), top = (H - lh) / 2;
+    const progress=document.createElement('progress');progress.max=1;progress.value=0;progress.setAttribute('aria-label','Letter outlines traced');
+    const assist=document.createElement('button');assist.className='btn';assist.textContent=helper?'Ask Theano to guide your hand':'Finish with assistance';assist.onclick=()=>{if(g.mode!=='paused')finish(share()<.8);};
+    wrap.append(cv, progress, tip, assist); document.body.append(wrap);
+    const c = cv.getContext('2d'), n = word.length, lw = 96, lh = 150, gapX = n>1?(W - 80 - n * lw) / (n - 1):0, top = (H - lh) / 2;
     // The guide lines, and points along them to check against.
     const lines = [], pts = [];
     [...word].forEach((ch, k) => { for (const s of STROKES[ch]) lines.push(s.map(([x, y]) => [40 + k * (lw + gapX) + x * lw, top + y * lh])); });
@@ -61,21 +66,25 @@ function trace(g, word, helper) {
     const at = (e) => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height]; };
     const finish = (guided) => {
       if (done) return; done = true;
+      assist.disabled=true;
       if (guided) { marks.length = 0; for (const l of lines) marks.push(l); draw(); }
       window.removeEventListener('keydown', onKey, true);
-      setTimeout(() => { wrap.remove(); res(guided ? 0 : share()); }, guided ? 900 : 500);
+      setTimeout(() => { wrap.remove();g.keys.clear();g.pressed.clear();if(g.mode==='play')g.canvas.focus();res(guided ? 0 : share()); }, guided ? 900 : 500);
     };
-    const onKey = (e) => { if (e.code === 'Space' || e.code === 'Enter' || e.code === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(share() < 0.8); } };
-    cv.addEventListener('pointerdown', (e) => { down = true; cv.setPointerCapture(e.pointerId); marks.push([at(e)]); g.audio.tone(300, 0.03, 'triangle', 0.02); });
+    const onKey = (e) => {if(g.mode==='paused' || e.ctrlKey || e.metaKey || e.altKey)return;if(e.code==='Tab'){e.preventDefault();e.stopImmediatePropagation();(document.activeElement===cv && !assist.disabled?assist:cv).focus();return;}if(e.repeat){e.preventDefault();e.stopImmediatePropagation();return;}if (e.code === 'Space' || e.code === 'Enter' || e.code === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(share() < 0.8); } };
+    cv.addEventListener('pointerdown', (e) => {if(g.mode==='paused' || done)return;down = true; cv.setPointerCapture(e.pointerId); marks.push([at(e)]); g.audio.tone(300, 0.03, 'triangle', 0.02); });
     cv.addEventListener('pointerup', () => { down = false; });
+    cv.addEventListener('pointercancel',()=>{down=false;});
     cv.addEventListener('pointermove', (e) => {
-      if (!down || done) return;
-      const p = at(e); marks[marks.length - 1].push(p);
-      for (const q of pts) if (!q.hit && Math.hypot(q.x - p[0], q.y - p[1]) < 13) q.hit = true;
+      if (!down || done || g.mode==='paused') return;
+      const p = at(e),stroke=marks[marks.length-1],a=stroke[stroke.length-1],dx=p[0]-a[0],dy=p[1]-a[1],length2=dx*dx+dy*dy;stroke.push(p);
+      // Count the entire stylus segment, including quick strokes between pointer events.
+      for (const q of pts) if (!q.hit) {const t=length2?Math.max(0,Math.min(1,((q.x-a[0])*dx+(q.y-a[1])*dy)/length2)):0;if(Math.hypot(q.x-a[0]-t*dx,q.y-a[1]-t*dy)<13)q.hit=true;}
+      progress.value=share();
       draw(); if (share() > 0.86) finish(false);
     });
     window.addEventListener('keydown', onKey, true);
-    draw();
+    draw();cv.focus();
   });
 }
 

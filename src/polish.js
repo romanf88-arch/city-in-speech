@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { clamp, damp } from './util.js';
 
 const SETTINGS = 'city-in-speech-presentation-v1';
-const DEFAULTS = { focus: true, rays: true, harbor: false };   // harbor detail costs about 3 ms on Intel UHD 620 and is hard to see
+const DEFAULTS = { focus: true, rays: true, harbor: false, motes: true, marker: true, fresco: false };   // harbor detail costs about 3 ms on Intel UHD 620 and is hard to see
 
 export class Polish {
   constructor(g) {
@@ -42,7 +42,7 @@ export class Polish {
       const note = document.createElement('small'); note.textContent = help; text.append(note);
       input.addEventListener('change', () => this.set(key, input.checked));
       row.append(input, text); field.append(row); this.controls[key] = input;
-      if (!this.g.post.ok) { input.disabled = true; note.textContent = 'Unavailable with this browser’s graphics support.'; }
+      if (!this.g.post.ok && key !== 'marker') { input.disabled = true; note.textContent = 'Unavailable with this browser’s graphics support.'; }
     }
     panel.insertBefore(field, document.getElementById('restartAsk'));
   }
@@ -74,7 +74,7 @@ export class Polish {
     const sky = g.sky, daytime = g.space !== 'cave' && sky.cur.stars < 0.2 && sky.sunDir.y > 0.06 && sky.cur.cov < 0.75;
     camera.getWorldDirection(this._dir);
     const facing = this._dir.dot(sky.sunDir);
-    const indoor = g.space === 'world' && g.world.indoor(g.player.x, g.player.z);
+    const indoor = g.spaces[g.space].indoor?.(g.player.x,g.player.z) || (g.space === 'world' && g.world.indoor(g.player.x, g.player.z));
     let shafts = this.options.rays && daytime && !indoor && g.post.scale >= 0.85 && !g.post.neutral && facing > 0.2;
     if (shafts) {
       this._sun.copy(sky.sunDir).multiplyScalar(1000).add(camera.position).project(camera);

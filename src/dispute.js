@@ -2,6 +2,9 @@
 import { $, el } from './util.js';
 import { CARDS, CARD_BY_ID } from './cards.js';
 import { READERS, DISPUTES, TENSIONS, SOURCES, STORY, WORDS } from './content.js';
+import { EvidenceTable, rememberConnection } from './evidence-table.js';
+import { passageBrowser } from './passage-browser.js';
+import { voteMoment } from './vote-moment.js';
 
 const TRIES = 3;   // no longer a limit (see PARTS below); kept so that old saved games still load
 
@@ -54,11 +57,14 @@ export async function runDispute(g, id) {
   for (;;) {
     const opts = D.readers.map((r) => {
       const R = READERS[r.who], heard = st.heard.includes(r.who), pressed = (st.pressed[r.who] || []).length;
-      return { text: (heard ? 'Go back to ' : 'Hear ') + R.name + ', who ' + R.role, note: heard ? (pressed ? 'You have found a weak spot in this view.' : 'Heard. Not tested yet.') : '' };
+      const agreed=(st.agreed?.[r.who] || []).length;
+      const attempted=(st.connections || []).some(c=>c.who===r.who);
+      const note=pressed?'You have found a weak spot in this view.':agreed?'You have found evidence supporting this view.':attempted?'You have tested a connection. You can revise it.':'Heard. Not tested yet.';
+      return { text: (heard ? 'Go back to ' : 'Hear ') + R.name + ', who ' + R.role, note: heard ? note : 'You have not heard this view yet.', portrait:{letter:R.name[0],color:R.color} };
     });
     const allHeard = D.readers.every((r) => st.heard.includes(r.who));
-    opts.push({ text: 'Cast your pebble', note: allHeard ? 'Say which view you find strongest, or keep your pebble.' : 'You can do this once you have heard everyone.' });
-    const pick = await g.choose(opts, { prompt: D.question, name: 'Who do you want to hear?' });
+    opts.push({ text: 'Cast your pebble', disabled:!allHeard,note: allHeard ? 'Say which view you find strongest, or keep your pebble.' : 'Hear everyone first to make this choice available.' });
+    const pick = await g.choose(opts, { prompt: D.question, name: 'Who do you want to hear?', council:true, note:D.readers.filter(r=>st.heard.includes(r.who)).length+' of '+D.readers.length+' views heard · Testing evidence is optional' });
     if (pick === D.readers.length) {
       if (!allHeard) { await g.say('', 'Hear all of them first. Otherwise you would only be guessing.'); continue; }
       break;
@@ -71,6 +77,7 @@ export async function runDispute(g, id) {
   const v = await g.choose(vopts, { prompt: D.question, name: 'Where does your pebble go?' });
   const voted = v < D.readers.length ? D.readers[v].who : 'none';
   st.vote = voted; st.done = true; g.audio.blip('pebble');
+  voteMoment(g,voted==='none'?null:READERS[voted]);
   if (voted !== 'none') await g.say(voted, D.readers[v].voted);
   const part = D.parting[voted];
   if (part) await g.say(part[0], part[1]);
@@ -108,15 +115,20 @@ async function hearReader(g, id, r, hand) {
       if (!canObject) { await g.say('', 'You have no passages that bear on this yet.'); continue; }
       const cardId = await g.ui.pickCard(hand(), 'Which passage do you want to put to ' + R.name + '?', R.name + ' will ask which part of the view it goes against.');
       if (!cardId) continue;
-      g.stats.objections++;
       const card = CARD_BY_ID[cardId], t = r.troubles[cardId], sup = r.supports[cardId], parts = (PARTS[id] && PARTS[id][r.who] && PARTS[id][r.who][cardId]) || null;
       await g.say('you', 'What about this passage? “' + card.title + '.”');
       // The reader asks which part of the claim the passage goes against. A wrong answer costs nothing but the correction.
       const body = r.claim.map((line, i) => ({ text: NTH[i] || 'Another thing you said', note: line }));
       body.push({ text: 'None of it. It backs you up.', note: '' });
-      const pick = await g.choose(body, { prompt: 'Which part of what I said does that go against?', name: R.name });
+      const pick = g.ui.auto
+        ? await g.choose(body, { prompt: 'Which part of what I said does that go against?', name: R.name })
+        : await new EvidenceTable(g,R.name,r.claim,card).done;
+      if(pick===null)continue;
+      g.stats.objections++;
+      const record=(kind,reply,cite)=>rememberConnection(st,{who:r.who,card:cardId,claim:pick<r.claim.length?pick:null,kind,reply,cite});
       const backs = pick === r.claim.length, miss = () => { g.audio.blip('bad'); st.misses++; g.stats.misses++; g.log.push({ t: 'attempt', skill: 'evidence', correct: false, dispute: id, who: r.who, card: cardId }); };
       if (t && !backs && (!parts || parts.includes(pick))) {
+        record('challenge',t.reply,t.cite);
         const first = !(st.pressed[r.who] || []).includes(cardId);
         g.audio.blip('good'); g.stats.hits += first ? 1 : 0;
         if (first) (st.pressed[r.who] || (st.pressed[r.who] = [])).push(cardId);
@@ -126,8 +138,10 @@ async function hearReader(g, id, r, hand) {
         if (first) g.ui.toast('Weak spot found', R.name + ' on “' + card.title + '”');
       } else if (t) {
         miss();
-        await g.say(r.who, backs ? 'I wish it did. Read it again. I think it goes against something I said.' : 'That passage does give me trouble, but not there. Look again at what I said.');
+        const reply=backs ? 'I wish it did. Read it again. I think it goes against something I said.' : 'That passage does give me trouble, but not there. Look again at what I said.';
+        record('unresolved',[reply]);await g.say(r.who,reply);
       } else if (sup && backs) {
+        record('support',[sup]);
         const agreed = st.agreed || (st.agreed = {}), first = !(agreed[r.who] || []).includes(cardId);
         g.audio.blip('good'); if (first) { (agreed[r.who] || (agreed[r.who] = [])).push(cardId); g.stats.agreed = (g.stats.agreed || 0) + 1; }
         g.log.push({ t: 'attempt', skill: 'evidence', correct: true, dispute: id, who: r.who, card: cardId, kind: 'supports' });
@@ -135,7 +149,8 @@ async function hearReader(g, id, r, hand) {
         if (first) g.ui.toast('Common ground found', R.name + ' on “' + card.title + '”');
       } else {
         miss();
-        await g.say(r.who, sup || (backs ? 'I don’t see that it has much to do with what I said, one way or the other.' : 'I don’t see how that passage is a problem for what I said.'));
+        const reply=sup || (backs ? 'I don’t see that it has much to do with what I said, one way or the other.' : 'I don’t see how that passage is a problem for what I said.');
+        record('unresolved',[reply]);await g.say(r.who,reply);
       }
       if (st.misses >= 2 && !st.hinted) { st.hinted = true; if (!(await guide(g, 'Look for a passage that says the opposite of what ' + R.name + ' just claimed. ' + r.hint, 'think'))) await g.say('', 'A passage is a problem for a view when the view says one thing and the passage seems to say the opposite.'); }
     } else return;
@@ -145,7 +160,16 @@ async function hearReader(g, id, r, hand) {
 // ---------------------------------------------------------------- journal
 export function renderJournal(g, tab) {
   tab = tab || g.journalTab || 'story'; g.journalTab = tab;
-  document.querySelectorAll('#journal .tab').forEach((b) => { b.classList.toggle('on', b.dataset.tab === tab); b.onclick = () => renderJournal(g, b.dataset.tab); });
+  const tabs=Array.from(document.querySelectorAll('#journal .tab'));
+  tabs.forEach((b,i)=>{
+    const selected=b.dataset.tab===tab;b.classList.toggle('on',selected);b.setAttribute('aria-selected',String(selected));b.tabIndex=selected?0:-1;
+    b.onclick=()=>renderJournal(g,b.dataset.tab);
+    b.onkeydown=e=>{
+      if(e.ctrlKey || e.metaKey || e.altKey)return;
+      const next=e.code==='ArrowRight'?(i+1)%tabs.length:e.code==='ArrowLeft'?(i+tabs.length-1)%tabs.length:e.code==='Home'?0:e.code==='End'?tabs.length-1:-1;
+      if(next<0)return;e.preventDefault();e.stopPropagation();renderJournal(g,tabs[next].dataset.tab);tabs[next].focus();
+    };
+  });
   const body = $('journalBody'); body.innerHTML = '';
   if (tab === 'story') {
     const list = STORY.filter((e) => e.when(g.flags));
@@ -156,9 +180,7 @@ export function renderJournal(g, tab) {
     }
   } else if (tab === 'passages') {
     if (!g.cards.length) { body.append(el('p', null, 'No passages yet. You will collect them as you hear what was said last night. Each one is a place in Plato’s book, retold in plain words.')); return; }
-    const wrap = el('div', 'cards');
-    CARDS.filter((c) => g.cards.includes(c.id)).forEach((c) => wrap.append(g.ui.cardEl(c, false)));
-    body.append(wrap);
+    body.append(passageBrowser(g,CARDS.filter((c) => g.cards.includes(c.id))));
   } else if (tab === 'readings') {
     const ids = Object.keys(DISPUTES).filter((id) => g.disputeState[id] && g.disputeState[id].started);
     if (!ids.length) { body.append(el('p', null, 'No disputes yet. When people disagree about what something means, their views are kept here with the books they come from.')); return; }
@@ -174,9 +196,33 @@ export function renderJournal(g, tab) {
         if (st.asked.includes(r.who)) box.append(el('p', null, r.why.join(' ')));
         for (const cid of (st.pressed[r.who] || [])) { const t = r.troubles[cid], hc = el('div', 'hard'); hc.append(el('b', null, 'Weak spot: ' + CARD_BY_ID[cid].title + ' (' + CARD_BY_ID[cid].ref + '). ')); hc.append(document.createTextNode(t.reply.join(' ') + (t.cite ? ' (' + t.cite + ')' : ''))); box.append(hc); }
         box.append(el('div', 'src', 'From: ' + r.src + (r.note ? ' ' + r.note : '')));
+        const connections=(st.connections || []).filter(c=>c.who===r.who && CARD_BY_ID[c.card]);
+        if(connections.length) {
+          const trail=el('section','connection-trail');trail.append(el('h4',null,'Connections you tested'));
+          for(const c of connections) {
+            const card=CARD_BY_ID[c.card],detail=el('details','connection-record '+c.kind),summary=el('summary');
+            const label=c.kind==='challenge'?'A tension found':c.kind==='support'?'Common ground':'Unresolved';
+            summary.append(el('span','connection-kind',label),document.createTextNode(card.title));detail.append(summary);
+            detail.append(el('p','connection-claim',c.claim===null?'You suggested that the passage supports this view.':'You questioned: “'+r.claim[c.claim]+'”'));
+            detail.append(el('small',null,(/^[0-9]/.test(card.ref)?'Republic ':'')+card.ref),el('blockquote',null,card.text));
+            detail.append(el('b',null,R.name+' replied:'));
+            for(const line of c.reply || [])detail.append(el('p',null,line));
+            if(c.cite)detail.append(el('small',null,c.cite));
+            trail.append(detail);
+          }
+          box.append(trail);
+        }
         body.append(box);
       }
       if (st.done && st.vote === 'none') body.append(el('p', null, 'You kept your pebble.'));
+    }
+  } else if (tab === 'places') {
+    if(g.fieldNotes)body.append(g.fieldNotes.render());
+  } else if (tab === 'dialogue') {
+    const history=g.dialogueHistory || [];
+    body.append(el('p',null,history.length?'Newest first. The last 80 spoken lines from this play session.':'No dialogue yet. Spoken lines from this play session will appear here.'));
+    for(const line of [...history].reverse()){
+      const entry=el('article','dialogue-memory');entry.append(el('b',null,line.speaker),el('p',null,line.text));body.append(entry);
     }
   } else if (tab === 'people') {
     body.append(el('p', null, 'Mika and the six readers below are invented. Each reader speaks for real books, named here. What they say those books argue was taken from the books themselves.'));

@@ -361,7 +361,7 @@ export function setupNights(g, hooks) {
     if (r.vote === 1) { await gg.say('shep3', 'You say that because you’re quick on your feet. Wait until two of them come for your fold on the same night.'); await gg.say('', 'The others agree with him. You are outvoted.'); }
     await gg.say('shep3', 'Then it’s settled. Nobody takes from another man’s fold. One of us walks the folds every night with a torch. Whoever he catches pays three sheep.');
     await gg.say('glaucon', 'That, people say, is where law comes from. And keeping the deal is all they mean by “doing right”.', told);
-    await gg.say('glaucon', 'Look at who wanted it. The ones who can’t rob and get away with it. They don’t think the rule is good. They put up with it because being robbed is worse.', told);
+    await gg.say('glaucon', 'Look at who wanted the rule. The ones who can’t steal without getting caught, or keep thieves away from their own sheep. They accept the rule because they lose more from being robbed than they gain from stealing.', told);
     await gg.say('glaucon', 'A man who could take what he liked and never pay for it would be mad to agree. That is what people say.', told);
     hooks.api.giveCards(gg, ['compact']);
     await gg.ui.fade(1, 0.8); gg.env('night', 0); start(2); home(gg); await gg.ui.fade(0, 0.8);

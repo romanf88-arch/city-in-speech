@@ -170,7 +170,7 @@ const REMARKS = [
   { x: -30, z: 50, r: 16, text: 'Those big ships carry grain. Athens can’t grow enough to feed itself, so nearly everything comes in through this harbor.' },
   { x: 0, z: 28, r: 9, text: 'Straight up this street is the market square. The house is past it, on the left.' },
   { x: 0, z: 6, r: 10, text: 'This is the agora, the market square. You can buy anything here, and hear every rumor in town.' },
-  { x: 7, z: -9, r: 9, text: 'That’s Terpes on the platform. He recites Homer from memory, for hours at a time. We’ll come back for him.', when: (f) => !f.poetry },
+  { x: 7, z: -9, r: 9, text: 'That’s Terpes on the platform. He recites Homer from memory, for hours at a time. Stand near him long enough and you’ll hear the whole Iliad.', when: (f) => !f.poetry },   // (until 2026-11-23 she said "We’ll come back for him", which she had no way of knowing)
   { x: 0, z: -44, r: 6, text: 'Left here. It’s the big house at the end of this street.', when: (f) => !f.atHouse },
   { x: 40, z: -6, r: 10, text: 'That’s the new shrine to Bendis. Yesterday’s parade ended here.' },
   { x: 0, z: -74, r: 7, text: 'This is the north gate. The road goes up into the hills, and on to Athens.' },
@@ -267,7 +267,7 @@ export async function setup(g) {
   g.addNPC({ id: 'guard1', name: 'Gate guard', look: { skin: 'tan', robe: 0x8a3b2e, length: 'short', hat: 'helmet', beard: 'short' }, x: -3.4, z: -76.4, h: 0, prop: 'spear', pose: 'guard' });
   g.addNPC({ id: 'guard2', name: 'Gate guard', look: { skin: 'olive', robe: 0x8a3b2e, length: 'short', hat: 'helmet' }, x: 3.4, z: -76.4, h: 0, prop: 'spear', pose: 'guard' });
   g.addNPC({ id: 'sailor1', name: 'Sailor', look: { skin: 'dark', robe: 0xcfc0a0, length: 'short', hair: 0x15110e, beard: 'short' }, x: -58.4, z: 62.3, h: -0.9 });
-  g.addNPC({ id: 'sailor2', name: 'Sailor', look: { skin: 'tan', robe: 0x6f7f6a, length: 'short', hair: 0x4a3a2a, hairStyle: 'bald' }, x: -54.6, z: 62.0, h: -2.2, pose: 'ground' });
+  g.addNPC({ id: 'sailor2', name: 'Sailor', look: { skin: 'tan', robe: 0x6f7f6a, length: 'short', hair: 0x4a3a2a, hairStyle: 'bald' }, x: -61.0, z: 63.0, h: 1.98, pose: 'ground' });   // on the pier, facing the other two (until 2026-11-23 at x -54.6, 1.9 m past its edge, sitting on the seabed under the water)
   // the festival crowd
   const spots = [[2, 46, 9], [-12, 42, 8], [18, 44, 8], [0, 26, 6], [-6, 4, 9], [8, 0, 9], [-14, -6, 7], [14, 6, 7], [2, -16, 6], [0, -34, 7], [-3, -58, 6], [30, 20, 8], [-34, 20, 8], [44, 46, 7], [-70, 46, 6], [24, -8, 5], [62, -10, 6], [-66, -46, 5], [70, 44, 8], [-40, 48, 7], [30, -28, 6], [-30, -28, 6], [62, -40, 6], [-66, 0, 5], [40, 22, 7], [-50, 20, 7], [84, 20, 6], [-84, -46, 5], [-80, 46, 6], [12, 40, 6]];
   spots.forEach(([x, z, r], i) => g.addNPC({ id: 'crowd' + i, name: i % 4 === 0 ? 'A Thracian visitor' : 'A festival-goer', look: crowdLook(i + 2), x, z, h: i * 1.3, behavior: 'wander', radius: r, speed: 0.9 + (i % 3) * 0.15 }));

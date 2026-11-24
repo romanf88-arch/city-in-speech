@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The City in Speech</title>
+<link rel="stylesheet" href="./interface.css">
 <!--
 SPEC (stage 1, second version)
 1. You play a visitor who has just landed at the Piraeus during a festival. Move anywhere on the map.
@@ -163,8 +164,10 @@ button.card:hover,button.card.sel{border-color:var(--gold);background:#fff6d6;bo
 <canvas id="view" tabindex="0" aria-label="The game view. W and S walk, A and D turn, E talks, H asks your guide, J opens the journal, Escape pauses."></canvas>
 
 <div id="hud" class="hidden">
+  <div id="hud-header"><div id="wayfinding">
   <div id="objective" class="hidden"><small>Now</small><span id="objText"></span></div>
   <div id="compass" class="hidden"><span class="arrow" id="compArrow"></span><span id="compText"></span></div>
+  </div>
   <div id="topbar">
     <button class="chip hidden" id="btnGuide">Ask Mika<kbd>H</kbd></button>
     <button class="chip" id="btnJournal">Journal<kbd>J</kbd></button>
@@ -173,9 +176,9 @@ button.card:hover,button.card.sel{border-color:var(--gold);background:#fff6d6;bo
     <button class="chip" id="btnMusic" aria-expanded="false">Music</button>
     <button class="chip" id="btnPause">Pause<kbd>Esc</kbd></button>
   </div>
+  <div id="toasts"></div></div>
   <div id="area"><b></b><span></span></div>
   <div id="bubbles"></div>
-  <div id="toasts"></div>
   <div id="prompt" class="hidden"></div>
   <div id="hint" class="hidden"></div>
   <div id="wax" class="hidden"></div>
@@ -205,14 +208,14 @@ button.card:hover,button.card.sel{border-color:var(--gold);background:#fff6d6;bo
   </div>
 </div>
 
-<div id="pause" class="veil hidden"><div class="panel" style="max-width:520px">
-  <h2>Paused</h2>
-  <p id="pauseKeys" style="font-family:var(--sans);font-size:14px;line-height:1.8"></p>
+<div id="pause" class="veil hidden" role="dialog" aria-modal="true" aria-labelledby="pause-title"><div class="panel" style="max-width:520px">
+  <h2 id="pause-title">Paused</h2>
   <div class="row">
     <button class="btn" id="btnResume">Resume</button>
     <button class="btn ghost" id="btnMotion" aria-pressed="false">Reduce motion: off</button>
     <button class="btn ghost" id="btnRestart">Start over</button>
   </div>
+  <details class="pause-settings-group pause-help"><summary>Controls</summary><p id="pauseKeys" style="font-family:var(--sans);font-size:14px;line-height:1.8"></p></details>
   <p id="restartAsk" class="hidden" style="font-size:15px">This erases your progress in this browser. <button class="btn" id="btnRestartYes">Erase and start over</button> <button class="btn ghost" id="btnRestartNo">Keep playing</button></p>
 </div></div>
 
@@ -223,7 +226,9 @@ button.card:hover,button.card.sel{border-color:var(--gold);background:#fff6d6;bo
     <button class="tab" data-tab="readings" role="tab">Disputes</button>
     <button class="tab" data-tab="passages" role="tab">Passages</button>
     <button class="tab" data-tab="people" role="tab">People</button>
+    <button class="tab" data-tab="places" role="tab">Places</button>
     <button class="tab" data-tab="words" role="tab">Words</button>
+    <button class="tab" data-tab="dialogue" role="tab">Recent dialogue</button>
     <button class="tab" data-tab="sources" role="tab">Sources</button>
   </div>
   <div id="journalBody"></div>

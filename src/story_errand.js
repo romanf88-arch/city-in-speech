@@ -42,6 +42,43 @@ export function setupErrand(g, api) {
   let step = -1, turn = 0, lastA = null, sub = 0, slips = 0, has = { basket: false, jar: false };
   const set = (n) => { step = n; g.flags.altarStep = n; api.refreshObjective(g); };
   const ceph = () => g.npc('cephalus');
+  // Seeing the offering (2026-11-23). The camera sat behind the stranger, so the player saw his back and not the
+  // stick going into the water, the sprinkling, the barley on the fire or the scattering (Roman: "we don't actually
+  // see any of it happen"). For each of these the view now cuts to the side, framing who does it and what it is done
+  // to, and cuts back afterward. It takes the side where there is room for the camera inside the courtyard.
+  const _wp = new THREE.Vector3();
+  // extra: other people who are part of what is shown; bR: how far round b counts as b (the seated company).
+  const showing = (gg, a, b, extra = [], bR = 0.5) => {
+    const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2, dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz) || 1, nx = -dz / L, nz = dx / L;
+    const sp = gg.spaces[gg.space], gy = w.standY(mx, mz);
+    // Nothing between the camera and the two: no wall, no other person, and no fire (a fire in front filled the view).
+    const near = (p, q, r = 0.5) => Math.hypot(p.x - q.x, p.z - q.z) < r;
+    const part = (p) => near(p, a) || near(p, b, bR) || extra.some((e) => near(p, e));
+    const others = [], people = [];
+    for (const n of gg.npcs.values()) if (!n.hidden && n.space === gg.space) { people.push(n.actor); if (!part(n.actor)) others.push([n.actor.x, n.actor.z, 0.5]); }
+    for (const f of gg.flames || []) if (!near(f, a) && !near(f, b)) others.push([f.x, f.z, 0.55]);
+    const blocked = (cx, cz) => {
+      if (sp.solidAt(cx, 1.5, cz, 0.35) || sp.solidAt((cx + mx) / 2, 1.5, (cz + mz) / 2, 0.15)) return 9;
+      let hits = 0;
+      for (const q of people) if (Math.hypot(q.x - cx, q.z - cz) < 1.6) hits += 2;   // not right behind someone's head
+      // nothing on the lines to either of the two, or to the middle
+      for (const [ex, ez] of [[mx, mz], [a.x, a.z], [b.x, b.z]]) for (const [ox, oz, r] of others) {
+        const ux = ex - cx, uz = ez - cz, l2 = ux * ux + uz * uz, t = Math.max(0, Math.min(1, ((ox - cx) * ux + (oz - cz) * uz) / l2));
+        if (Math.hypot(ox - cx - ux * t, oz - cz - uz * t) < r + 0.1) hits++;
+      }
+      return hits;
+    };
+    let best = null;
+    for (const dist of [3.6, 3.0, 2.4]) for (const turn of [0, 0.5, -0.5, 0.9, -0.9]) for (const sd of [1, -1]) {
+      const c = Math.cos(turn), sn = Math.sin(turn), vx = (nx * c - dx / L * sn) * sd, vz = (nz * c - dz / L * sn) * sd;
+      const cx = mx + vx * dist, cz = mz + vz * dist, k = blocked(cx, cz);
+      if (k < 9 && (!best || k < best.k)) best = { cx, cz, k };
+      if (best && best.k === 0) break;
+    }
+    if (!best) return;
+    gg.cam.mode = 'fixed'; gg.cam.fixed = { pos: new THREE.Vector3(best.cx, gy + 2.0, best.cz), look: new THREE.Vector3(mx, gy + 1.0, mz) }; gg.snapCam = true;
+  };
+  const back = (gg) => { if (gg.cam.mode === 'fixed') { gg.cam.mode = 'follow'; gg.cam.fixed = null; gg.snapCam = true; } };
 
   // What the goal box and Mika say during the task. The three orders of step 3 are not repeated in the goal box:
   // the player has to have listened. Mika will repeat them if asked.
@@ -81,18 +118,20 @@ export function setupErrand(g, api) {
     if (Math.abs(turn) >= 2 * PI * 0.93) {
       step = 1.5;
       g.run(async (gg) => {
+        showing(gg, ceph().actor, jar.getWorldPosition(_wp));
         if(gg.interactions)await gg.interactions.play('steam',ceph().actor,{x:jar.position.x,y:jar.position.y+0.7,z:jar.position.z},{source:jar,offset:new THREE.Vector3(0,0.46,0)});
         await gg.say('', 'Cephalus takes a burning stick from the altar and puts it out in the water. It hisses.');
         await gg.say('cephalus', 'Now sprinkle the altar.');
-        set(2);
+        back(gg); set(2);
       });
     }
   });
   g.addSpot({ x: ALTAR.x, z: ALTAR.z, r: 2.0, label: 'Sprinkle the altar', when: () => step === 2, run: async (gg) => {
+    showing(gg, gg.player, ALTAR);
     if(gg.interactions)await gg.interactions.play('water',gg.player,{x:ALTAR.x,y:yOf(ALTAR)+1.1,z:ALTAR.z},{source:jar,offset:new THREE.Vector3(0,0.46,0)});
     gg.audio.blip('pebble');
     await gg.say('cephalus', 'Give me some barley. Then wash your hands, and scatter the rest among the company.');
-    sub = 0; ceph().label = 'Give Cephalus barley'; set(3);
+    back(gg); sub = 0; ceph().label = 'Give Cephalus barley'; set(3);
   } });
   // the three orders, which must be done in his order
   const wrong = async (gg, line) => { slips++; await gg.say('cephalus', line, { mood: 'think' }); };
@@ -100,28 +139,32 @@ export function setupErrand(g, api) {
   g.errand.give = async (gg) => {
     if (step !== 3 || sub !== 0) return false;
     sub = 1; ceph().label = null; gg.audio.blip('pick');
+    let fire0 = null, fd0 = 3; for (const f of gg.flames) { const d = Math.hypot(f.x - ALTAR.x, f.z - ALTAR.z); if (d < fd0) { fd0 = d; fire0 = f; } }
+    showing(gg, ceph().actor, fire0 || ALTAR, [gg.player]);
     // You hold out the basket; he takes a handful and throws it on the fire.
     if (gg.interactions && !gg.ui.auto && !gg.reduceMotion) { gg.player.play('offer'); await gg.wait(0.7); }
     // The fire is on the brazier beside the altar (2 m away); the barley goes there.
     let fire = null, fd = 3; for (const f of gg.flames) { const d = Math.hypot(f.x - ALTAR.x, f.z - ALTAR.z); if (d < fd) { fd = d; fire = f; } }
     if (gg.interactions) await gg.interactions.play('grain', ceph().actor, fire ? { x: fire.x, y: fire.y, z: fire.z } : { x: ALTAR.x, y: yOf(ALTAR) + 1.1, z: ALTAR.z });
-    await gg.say('', 'He takes a handful from the basket and throws it on the fire.'); return true;
+    await gg.say('', 'He takes a handful from the basket and throws it on the fire.'); back(gg); return true;
   };
   g.addSpot({ x: WASH.x, z: WASH.z, r: 1.3, label: 'Pour water over your hands', when: () => step === 3 && sub < 2, run: async (gg) => {
     if (sub === 0) { await wrong(gg, 'The barley first.'); return; }
     sub = 2; gg.audio.blip('pebble');
+    showing(gg, gg.player, { x: gg.player.x + Math.sin(gg.player.heading) * 1.2, z: gg.player.z + Math.cos(gg.player.heading) * 1.2 });
     if(gg.interactions) {
       const hand=new THREE.Vector3(),target=()=>{gg.player.bones.handR.updateWorldMatrix(true,false);return gg.player.bones.handR.getWorldPosition(hand);};
       await gg.interactions.play('water',gg.player,target,{source:jar,offset:new THREE.Vector3(0,0.46,0)});
     }
-    await gg.say('', 'You pour water from the jar over one hand and then the other.');
+    await gg.say('', 'You pour water from the jar over one hand and then the other.'); back(gg);
   } });
   g.addSpot({ x: CROWD.x, z: CROWD.z, r: 2.2, label: 'Scatter the barley among them', when: () => step === 3, run: async (gg) => {
     if (sub === 0) { await wrong(gg, 'The barley first. To me.'); return; }
     if (sub === 1) { await wrong(gg, 'Not with those hands. Wash first.'); return; }
     step = 3.5;
+    showing(gg, gg.player, CROWD, [], 1.8);
     if(gg.interactions)await gg.interactions.play('grain',gg.player,{x:CROWD.x,y:yOf(CROWD)+0.5,z:CROWD.z});
-    await gg.say('', 'The grains patter on cloaks and on the paving. The big man in the yellow cloak brushes his off.');
+    await gg.say('', 'The grains patter on cloaks and on the paving. The big man in the yellow cloak brushes his off.'); back(gg);
     set(4);
     await gg.say('cephalus', 'Let us pray. Who is here?');
     for (;;) {

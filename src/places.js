@@ -152,6 +152,7 @@ export function setupPlaces(g) {
     // The cloth moves less between gusts and more in one (gusts.js, 2026-11-19): 0.75 to 1.35 times what it was.
     clothUniforms.uClothWind.value = g.reduceMotion ? 0 : Math.min(1.7, g.sky.cur.wind || 0) * (0.75 + 0.6 * (g.gusts ? g.gusts.v : 0.4));
     const p = g.player, world = g.space === 'world', d = world ? districtAt(p.x, p.z) : null, L = d ? d.look : N, k = 1 - Math.exp(-0.7 * dt);
+    g.fieldNotes?.visit(d);
     const S = (v) => 1 + (v - 1) * STRENGTH, to = { ex: S(L.ex), color: S(L.color), contrast: S(L.contrast), haze: S(L.haze), wr: S(L.warm[0]), wg: S(L.warm[1]), wb: S(L.warm[2]), cr: S(L.cool[0]), cg: S(L.cool[1]), cb: S(L.cool[2]) };
     for (const key in cur) cur[key] += (to[key] - cur[key]) * k;
     // the name, once on coming into a district, and again only after two minutes away from it

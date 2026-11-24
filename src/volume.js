@@ -29,7 +29,7 @@ export function setupVolume(g) {
     pop.style.top = Math.round(r.bottom + 6) + 'px'; pop.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + 'px';
     pop.classList.remove('hidden'); label('sound'); label('music'); range.focus();
   };
-  const hide = () => { if (!open) return; open = null; pop.classList.add('hidden'); label('sound'); label('music'); g.canvas.focus(); };
+  const hide = (focus=true) => { if (!open) return; open = null; pop.classList.add('hidden'); label('sound'); label('music');if(focus)g.canvas.focus(); };
   for (const k of ['sound', 'music']) btn[k].onclick = () => { g.audio.unlock(); if (open === k) hide(); else show(k); };
   range.addEventListener('input', () => { vol[open] = +range.value / 100; if (vol[open] > 0) last[open] = vol[open]; apply(open); sync(); keep(); });
   off.onclick = () => { vol[open] = vol[open] > 0 ? 0 : last[open] || 1; apply(open); sync(); keep(); range.focus(); };
@@ -37,4 +37,5 @@ export function setupVolume(g) {
   pop.addEventListener('keyup', (e) => e.stopPropagation());
   document.addEventListener('pointerdown', (e) => { if (open && !pop.contains(e.target) && !btn[open].contains(e.target)) hide(); });
   apply('sound'); apply('music');
+  return {close:hide};
 }

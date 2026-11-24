@@ -8,28 +8,35 @@
 
 // Strike in time with the bronze-worker. The player presses the Space bar on each call. Returns the blows that
 // were in time. (The same mechanism as keeping the beat with Terpes in story_poetry.js.)
-function strike(g, beats = 6, gap = 0.9) {
+import { RhythmCue } from './rhythm-cue.js';
+export function strike(g, beats = 6, gap = 0.9) {
   if (g.ui.auto) return Promise.resolve(beats);
   return new Promise((res) => {
-    const start = performance.now() + 1100, times = []; for (let i = 0; i < beats; i++) times.push(start + i * gap * 1000);
+    const start = g.time * 1000 + 1100, times = []; for (let i = 0; i < beats; i++) times.push(start + i * gap * 1000);
     const hit = new Array(beats).fill(false); let shown = -1;
-    const draw = (k) => g.ui.story('Strike when he says “Now”.\n' + times.map((_, i) => (hit[i] ? '●' : i <= k ? '○' : '·')).join('  ') + (k >= 0 && k < beats ? '\nNow!' : ''));
+    let cue;
+    const draw = () => {g.ui.story('Strike when he says “Now”.');cue?.update(g.time*1000,hit);};
     draw(-1);
     const onKey = (e) => {
+      if(g.mode==='paused' || e.ctrlKey || e.metaKey || e.altKey)return;
+      if(e.repeat){if(['Space','Enter'].includes(e.code))e.preventDefault();return;}
+      if(e.code==='Tab'){e.preventDefault();e.stopImmediatePropagation();cue.button.focus();return;}
       if (e.code !== 'Space' && e.type !== 'pointerdown') return; if (e.preventDefault) e.preventDefault();
-      const now = performance.now(); let best = -1, bd = 260;
+      const now = g.time * 1000; let best = -1, bd = 260;
       times.forEach((t, i) => { const d = Math.abs(now - t); if (d < bd && !hit[i]) { bd = d; best = i; } });
       if (best >= 0) { hit[best] = true; g.audio.tone(1150, 0.16, 'triangle', 0.09, -260); g.audio.tone(540, 0.2, 'square', 0.03, -80); draw(shown); }
       else g.audio.tone(150, 0.12, 'sawtooth', 0.04, -30);
     };
+    cue=new RhythmCue(g,{title:'At the bronze-worker’s bench',action:'Strike',beats,start,gap:gap*1000,window:260,tap:()=>onKey({type:'pointerdown'})});cue.update(g.time*1000,hit);
     window.addEventListener('keydown', onKey, true); g.canvas.addEventListener('pointerdown', onKey);
     const tick = () => {
-      const now = performance.now();
+      if(g.mode !== 'play')return;
+      const now = g.time * 1000;
+      cue.update(now,hit);
       times.forEach((t, i) => { if (i > shown && now >= t - 120) { shown = i; draw(shown); } });
-      if (now > times[beats - 1] + 700) { window.removeEventListener('keydown', onKey, true); g.canvas.removeEventListener('pointerdown', onKey); g.ui.story(null); res(hit.filter(Boolean).length); }
-      else requestAnimationFrame(tick);
+      if (now > times[beats - 1] + 700) { window.removeEventListener('keydown', onKey, true); g.canvas.removeEventListener('pointerdown', onKey); g.ui.story(null);cue.close();g.tickers=g.tickers.filter(fn=>fn!==tick); res(hit.filter(Boolean).length); }
     };
-    requestAnimationFrame(tick);
+    g.tickers.push(tick);
   });
 }
 

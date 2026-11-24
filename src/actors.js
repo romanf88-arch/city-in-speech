@@ -695,6 +695,21 @@ function ghostMaterials() {
 }
 const smooth01 = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
+// Every person made, so that the levels made on first need can be made ahead of time (prepareLevels).
+const ALL_ACTORS = []; let prepIndex = 0;
+// Make the far figure and the middle-distance mesh of people who do not have them yet, for up to `budget` ms (at least
+// one person). Returns how many people are still to do. (2026-11-23: these used to be made the first time a person
+// came into that distance, and arriving somewhere new made many at once: 124 ms of a 187 ms frame at the well,
+// measured on Intel UHD 620. The game now calls this on the title screen, and slowly during play for any left.)
+export function prepareLevels(budget) {
+  const t0 = performance.now();
+  while (prepIndex < ALL_ACTORS.length) {
+    ALL_ACTORS[prepIndex++].prepareLevels();
+    if (performance.now() - t0 > budget) break;
+  }
+  return ALL_ACTORS.length - prepIndex;
+}
+
 export class Actor {
   // Let time pass for this person without posing it yet (see poseQueued). The place is updated at once.
   queue(dt, quality = 1) { this.pend = Math.min((this.pend || 0) + dt, 0.25); this.pendQ = quality; QUEUED.add(this); this.sync(); }
@@ -749,6 +764,7 @@ export class Actor {
     // A smooth person: near is the kit's mesh (plus low-polygon hat and tools), far is the low-polygon figure.
     this.lod = 0; this.near = true; this.far = null; this.extras = null;
     if (M) this._extras();
+    ALL_ACTORS.push(this);
   }
   attach(boneName, obj) { this.bones[boneName].add(obj); if (boneName === 'handR') this.held.R = true; if (boneName === 'handL') this.held.L = true; return obj; }
   place(x, z, heading, y) { this.x = x; this.z = z; if (heading != null) this.heading = heading; if (y != null) this.y = y; this.sync(); }
@@ -789,6 +805,12 @@ export class Actor {
     if (l < 2) this.mesh.geometry = l === 0 ? this.geoNear : this.geoMid || (this.geoMid = composeGeometry(this.model, this.pick.parts.map((n) => (this.model.parts['m:' + n] ? 'm:' + n : n))));
     if (this.ghost && l < 2) this._ghostMesh(this.mesh);
     this.mesh.visible = l < 2; if (this.extras) this.extras.visible = l < 2; if (this.far) this.far.visible = l === 2;
+  }
+  // The levels a smooth person makes on first need (setLod), made now and left hidden until they are used.
+  prepareLevels() {
+    if (!this.model) return;
+    if (!this.far) { this.far = this._low(buildFigure(this.spec, this.seed, this.props ? (b) => addTools(b, this.props) : null, (b) => this._lowShift(b))); this.far.visible = this.lod === 2; }
+    if (!this.geoMid) this.geoMid = composeGeometry(this.model, this.pick.parts.map((n) => (this.model.parts['m:' + n] ? 'm:' + n : n)));
   }
   // Pick the level from the distance to whoever is looking, with some slack so it does not flicker at a boundary.
   setDistance(d) { const l = this.lod; this.setLod(d < (l === 0 ? 7.5 : 6) ? 0 : d < (l === 2 ? 19 : 22) ? 1 : 2); }
@@ -855,6 +877,41 @@ export class Actor {
     this.phase += 2 * Math.PI * cad * dt * clamp(v / 0.3, 0, 1);
     const wk = this.walk, ph = this.phase, rk = this.runK * wk;
     const A = this.gaitA * wk, s = Math.sin(ph);
+    // Planted feet (2026-11-23). Until then the legs swung on a sine wave of the stride and nothing held a foot to the
+    // ground, so a foot that bore weight kept drifting forward: measured on the player, a walking foot stood still 1%
+    // of the time, where it should for about 60%. Now each foot, while it is down, moves back under the body at exactly
+    // the body's speed, so it stays where it landed; then it lifts, swings forward in an arc and comes down heel first.
+    // The heel rises before the foot leaves the ground. The legs bend to reach these places (solve2, as for sitting
+    // and kneeling, below), the body sinks a little when the feet are far apart, and the hip of the swinging leg drops
+    // while the body moves over the standing foot. A foot is down 62% of the time at a walk and 36% at a run.
+    // gf holds, for each foot (left first): how far forward of the hip, how high, the foot's tilt (plus is toes down),
+    // and how much weight it bears (0 to 1). Units are the skeleton's (meters divided by the figure's height).
+    const gi = !P.feet && Math.abs(this.rootX) < 0.05 && quality >= 0.25 ? wk : 0;
+    const gf = this.gf || (this.gf = new Float32Array(8));
+    let gDrop = 0;
+    {
+      const duty = 0.62 - 0.26 * this.runK, Zs = v / Math.max(cad, 0.3) / this.h * duty / 2;
+      // A long robe keeps the feet lower at a run (at the full kick the hem ballooned out behind, tested 2026-11-23).
+      const liftH = (0.07 + (short ? 0.2 : 0.08) * this.runK) / this.h * clamp(v / 0.6, 0, 1), Lr = 0.985 * (D.thigh + D.shin) * this.legS;
+      for (let i = 0; i < 2; i++) {
+        const c = (ph - Math.PI / 2) / (2 * Math.PI) + (i ? 0.5 : 0), u = c - Math.floor(c);
+        let z, y, tilt, bear;
+        if (u < duty) {           // down: heel strike, flat, then the heel rises
+          const p = u / duty; z = Zs * (1 - 2 * p);
+          tilt = p < 0.12 ? -0.25 * (1 - p / 0.12) : 0.95 * smooth01(0.62, 1, p);
+          y = 0.11 * Math.sin(Math.max(0, tilt)) * wk; bear = 1 - smooth01(0.85, 1, p);
+          const need = (D.thigh + D.shin) * this.legS - y - Math.sqrt(Math.max(0.01, Lr * Lr - z * z));
+          if (need > gDrop) gDrop = need;
+        } else {                  // in the air: forward in an arc, toes coming up before it lands
+          const q = (u - duty) / (1 - duty), e = q * q * (3 - 2 * q); z = Zs * (2 * e - 1);
+          y = liftH * Math.sin(Math.PI * Math.pow(q, 0.85)) + 0.11 * Math.sin(0.95) * wk * (1 - smooth01(0, 0.3, q));
+          tilt = 0.95 * (1 - smooth01(0, 0.5, q)) - 0.25 * smooth01(0.55, 1, q); bear = 0;
+        }
+        gf[i * 4] = z; gf[i * 4 + 1] = y; gf[i * 4 + 2] = tilt; gf[i * 4 + 3] = bear;
+      }
+    }
+    this.gDrop = damp(this.gDrop || 0, Math.min(gDrop, 0.14), 25, dt);
+    const sw = (1 - 0.5 * this.runK) * wk * (gf[3] - gf[7]);   // plus while the left foot bears the weight
     // Bare legs show everything a long robe hides, so their walk is shaped more closely (Roman, 2026-11-15: the
     // shepherd "walks funny": his legs opened like a pair of compasses and his feet hung in the air).
     const bare = short && !!this.model;
@@ -932,12 +989,26 @@ export class Actor {
       const bend = bare ? 0.9 * bell * (1 - this.runK) + (0.32 + 1.15 * rk) * swing * swing * this.runK : (0.32 + (short ? 1.15 : 0.45) * rk) * swing * swing;
       gw['shin' + side][0] = wk * (0.05 + bend * (A / 0.5) + (0.1 + 0.3 * rk) * (A / 0.5) * load);   // in a long robe the heel kicks less, or the leg shows behind the hem
       // The arm on this side swings back as this leg comes forward.
-      gw['arm' + (side === 'L' ? 'L' : 'R')][0] = (0.55 + 0.35 * rk) * A * sq;
-      gw['fore' + side][0] = -(0.12 * wk + 1.0 * rk);
+      // (2026-11-23) The arm swings a little after the leg, the elbow bends more as the arm comes forward, a little
+      // after it, and the hand trails the forearm. Before, the whole arm swung as one stiff piece with the leg.
+      gw['arm' + (side === 'L' ? 'L' : 'R')][0] = (0.55 + 0.35 * rk) * A * Math.sin(q - 0.25);
+      gw['fore' + side][0] = -(0.12 * wk + 1.0 * rk) - 0.32 * A * Math.max(0, -Math.sin(q - 0.7));
+      gw['hand' + side][0] = 0.14 * A * Math.sin(q - 1.2);
     }
     gw.skirtU[0] = Math.sin(ph * 2) * 0.03 * wk;
     gw.spine[0] = 0.14 * rk; gw.spine[1] = s * (0.07 + 0.05 * rk) * wk;
     gw.hips[1] = -s * 0.06 * wk;
+    gw.hips[2] = 0.055 * sw; gw.spine[2] = -0.035 * sw;
+    // Standing still, a person rests the weight on one leg, the other knee loose and that hip lower, and changes
+    // legs every 6 to 14 seconds (2026-11-23). Not while working, sitting or kneeling.
+    {
+      this.wsT = (this.wsT == null ? 2 + (this.seed % 7) : this.wsT) - dt;
+      if (this.wsT <= 0) { this.wsT = 6 + 8 * Math.random(); this.wsSide = -(this.wsSide || 1); }
+      const idle = !this.act && !P.feet && !P.rootX && this.pose === 'stand' ? 1 - wk : 0;
+      const ws = this.wsK = damp(this.wsK || 0, idle * (this.wsSide || 1), 1.6, dt), a = Math.abs(ws), free = ws > 0 ? 'R' : 'L';
+      gw.hips[2] += 0.045 * ws; gw.spine[2] -= 0.03 * ws;
+      gw['thigh' + free][0] -= 0.05 * a; gw['shin' + free][0] += 0.2 * a;
+    }
     for (const name of ANIM_BONES) {
       const t = target(name), cu = this.cur[name], o = K.b[name], gv = gw[name];
       cu[0] += (t[0] - cu[0]) * kd; cu[1] += (t[1] - cu[1]) * kd; cu[2] += (t[2] - cu[2]) * kd;
@@ -974,7 +1045,9 @@ export class Actor {
       const need = D.ankle + 0.04 - low; if (need > 0) lift += Math.min(need, 0.08);
       else if (bare) lift += need * wk;   // in a wide step, and with the knees bent in a run, both ankles are above the ground: the body comes down until the lower foot stands on it
     }
-    bones.root.position.y = lift;
+    if (gi > 0) lift = lift * (1 - gi) + (this.lift + this.lift0 + K.lift - this.gDrop) * gi;
+    const shiftX = 0.018 * sw * gi;   // the body over the standing foot
+    bones.root.position.y = lift; bones.root.position.x = shiftX;
     bones.root.rotation.x = this.rootX;
     const shr = 0.035 * clamp(M.sh + K.shrug, -1, 1.5);
     bones.armL.position.y = D.shY + shr; bones.armR.position.y = D.shY + shr;
@@ -986,27 +1059,30 @@ export class Actor {
     const PH = P.hands, mw = P.rootX ? 0 : M.hw;
     this.poseHW = damp(this.poseHW, PH ? 1 : 0, 8, dt);
     if (PH) for (let i = 0; i < 3; i++) { this.pL[i] = damp(this.pL[i], PH[0][i], 8, dt); this.pR[i] = damp(this.pR[i], PH[1][i], 8, dt); }
-    const needLeg = this.legW > 0.01, needArm = K.R.w > 0 || K.L.w > 0 || G.R.w > 0 || G.L.w > 0 || mw > 0.01 || this.poseHW > 0.01;
+    const needLeg = this.legW > 0.01 || gi > 0.01, needArm = K.R.w > 0 || K.L.w > 0 || G.R.w > 0 || G.L.w > 0 || mw > 0.01 || this.poseHW > 0.01;
     if (needLeg || needArm) {
       _qRoot.setFromAxisAngle(XAXIS, this.rootX);
-      _pH.set(0, 0.93, 0).applyQuaternion(_qRoot); _pH.y += lift;
+      _pH.set(0, 0.93, 0).applyQuaternion(_qRoot); _pH.y += lift; _pH.x += shiftX;
       _qH.copy(_qRoot).multiply(bones.hips.quaternion);
       if (needLeg) {
-        const f = this.feet, lw = this.legW, ls = this.legS;
+        const f = this.feet, walking = this.legW <= 0.01, lw = walking ? gi : this.legW, ls = this.legS;
         _qi.copy(_qH).invert();
         for (let i = 0; i < 2; i++) {
           const sx = i ? -1 : 1, th = bones[i ? 'thighR' : 'thighL'], sh = bones[i ? 'shinR' : 'shinL'], ft = bones[i ? 'footR' : 'footL'];
-          _tg.set(sx * (D.hipX + f[2]), f[3] + D.ankle, f[i]).sub(_pH).applyQuaternion(_qi);
+          if (walking) _tg.set(sx * D.hipX * 0.92, gf[i * 4 + 1] + 0.04 + D.ankle, gf[i * 4]).sub(_pH).applyQuaternion(_qi);
+          else _tg.set(sx * (D.hipX + f[2]), f[3] + D.ankle, f[i]).sub(_pH).applyQuaternion(_qi);
           _pole.set(sx * 0.4, 0.3, 1).applyQuaternion(_qi);
           solve2(sx * D.hipX, D.hipY, D.hipZ, _tg, D.thigh * ls, D.shin * ls, _pole, -1, _q1, _q2);
           th.quaternion.slerp(_q1, lw); sh.quaternion.slerp(_q2, lw);
           // Keep the foot level (or at the pose's pitch) whatever the leg does.
-          _qa.copy(_qH).multiply(th.quaternion).multiply(sh.quaternion).invert().multiply(_qb.setFromAxisAngle(XAXIS, f[4]));
+          _qa.copy(_qH).multiply(th.quaternion).multiply(sh.quaternion).invert().multiply(_qb.setFromAxisAngle(XAXIS, walking ? gf[i * 4 + 2] : f[4]));
           ft.quaternion.identity().slerp(_qa, lw);
         }
         // The skirt hangs between the two legs.
-        _qa.copy(bones.thighL.quaternion).slerp(bones.thighR.quaternion, 0.5); bones.skirtU.quaternion.slerp(_qa, lw);
-        _qa.copy(bones.shinL.quaternion).slerp(bones.shinR.quaternion, 0.5); bones.skirtL.quaternion.slerp(_qa, lw);
+        // (while walking, only part way, or a long robe swings out with the legs)
+        const kw = walking ? lw * 0.5 : lw;
+        _qa.copy(bones.thighL.quaternion).slerp(bones.thighR.quaternion, 0.5); bones.skirtU.quaternion.slerp(_qa, kw);
+        _qa.copy(bones.shinL.quaternion).slerp(bones.shinR.quaternion, 0.5); bones.skirtL.quaternion.slerp(_qa, kw);
       } else if (this.footSet) { bones.footL.quaternion.identity(); bones.footR.quaternion.identity(); }
       this.footSet = needLeg;
       if (needArm) {

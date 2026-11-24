@@ -872,6 +872,22 @@ export class Flora {
     const c = this._choose(id, x, z, scale || 1, null);
     return this._single(c, x, y, z, rot, parent);
   }
+  // A compact planted area, with the same wind and lighting as the rest of the vegetation.
+  // Group by form so a field does not become one draw call per tuft.
+  spawnPatch(id, placements, parent) {
+    const group=new THREE.Group(),forms=new Map(),matrix=new THREE.Matrix4(),rotation=new THREE.Quaternion();
+    for(const p of placements){const c=this._choose(id,p.x,p.z,p.scale || 1,null);if(!forms.has(c.dk))forms.set(c.dk,[]);forms.get(c.dk).push({p,c});}
+    for(const [dk,list] of forms){
+      const kind=this.kinds[dk],mesh=new THREE.InstancedMesh(kind.geo,this.matNear,list.length),colors=new Float32Array(list.length*3);
+      list.forEach(({p,c},i)=>{
+        rotation.setFromAxisAngle(_up,p.rot || 0);matrix.compose(new THREE.Vector3(p.x,p.y || 0,p.z),rotation,new THREE.Vector3(c.sx,c.sy,c.sx));mesh.setMatrixAt(i,matrix);
+        colors.set([c.bright,c.warm,c.tile+c.phase*.99],i*3);
+      });
+      mesh.instanceColor=new THREE.InstancedBufferAttribute(colors,3);mesh.customDepthMaterial=this.matDepth;mesh.castShadow=dk!==DK_GRASS;mesh.receiveShadow=true;
+      mesh.userData.casters=list.length;mesh.userData.range=kind.full;this._hook(mesh,kind);group.add(mesh);
+    }
+    parent?.add(group);return group;
+  }
   // For testing: a named variant, such as 'olive2', 'cypress0', 'pine1', 'lentisk', 'broom', 'grass3'.
   spawnKind(name, x, y, z, rot, scale, parent) {
     let c = null; const s = scale || 1, di = this.kinds.findIndex((k) => k.name === name), si = SHRUBS.findIndex((k) => k.name === name);
